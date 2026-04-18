@@ -1,0 +1,57 @@
+# iris-ft-lab — Model Registry
+#
+# All model references in scripts and YAML configs should resolve through here.
+# Scripts load this file and look up paths by alias — never hardcode model paths
+# in Python source.
+#
+# To override the active model: edit the `path` field in the relevant training
+# config (sft_*.yaml / dpo_*.yaml), or pass --model at the CLI.
+
+models:
+
+  - alias: qwen25-3b
+    path: "mlx-community/Qwen2.5-3B-Instruct-4bit"
+    status: primary
+    context_length: 32768
+    description: >
+      Default Trace-aligned model. Good balance of extraction capability and
+      training speed on M4. Use for Stage 1 SFT validation and the primary
+      extraction pipeline.
+    notes: >
+      4-bit quantized by the MLX community. If you need full-precision weights,
+      use 'Qwen/Qwen2.5-3B-Instruct' directly (requires more VRAM budget).
+
+  - alias: qwen3-1.7b
+    path: "mlx-community/Qwen3-1.7B-4bit"
+    status: smoke-test
+    context_length: 32768
+    description: >
+      Fast smoke-test model. Use for rapid iteration on data prep, schema
+      validation, and pipeline correctness before committing to a full 3B run.
+    notes: >
+      Qwen3 architecture — verify chat template compatibility with your
+      installed mlx-lm version before training.
+
+  - alias: qwen25-7b
+    path: "mlx-community/Qwen2.5-7B-Instruct-4bit"
+    status: upgrade-target
+    context_length: 128000
+    description: >
+      Upgrade target after the 3B pipeline is validated. Use when extraction
+      quality plateaus, especially on aspiration-vs-commitment edge cases.
+      Fits comfortably in 64GB unified memory with 4-bit quantization.
+    notes: >
+      Validate full-precision LoRA training cost before committing. Start with
+      the same LoRA rank=8 config; bump to rank=16 if quality allows.
+
+  - alias: qwen3-8b
+    path: "mlx-community/Qwen3-8B-4bit"
+    status: upgrade-target
+    context_length: 128000
+    description: >
+      Highest-capability upgrade target. Use for Stage 3 DPO experiments or
+      when extraction nuance (aspiration vs. commitment, gap characterization)
+      requires more reasoning capacity.
+    notes: >
+      Monitor memory pressure on M4 with 64GB. Reduce batch_size to 2 and
+      enable grad_checkpoint if you hit OOM.

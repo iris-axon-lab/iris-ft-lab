@@ -1,0 +1,26 @@
+[project]
+name = "iris-ft-lab"
+version = "0.1.0"
+description = "Fine-tuning lab for Trace Layer 2 memory extraction and prospective intent modeling"
+readme = "README.md"
+requires-python = ">=3.10"
+
+# Core runtime dependencies — listed here for reference.
+# setup.sh handles the actual venv creation and install.
+dependencies = [
+    "mlx",
+    "mlx-lm",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "notebook",
+    "matplotlib",
+    "pandas",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

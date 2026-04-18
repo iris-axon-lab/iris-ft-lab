@@ -1,0 +1,84 @@
+# Trace Layer 2 SFT config — Qwen2.5-3B-Instruct + LoRA
+#
+# Run:   python scripts/train_sft.py --config configs/sft_trace_qwen25_3b.yaml
+# Smoke: python scripts/train_sft.py --config configs/sft_trace_qwen25_3b.yaml --dry-run
+#
+# To swap models: change model.path here (or override via --model flag).
+# Never hardcode model paths in Python.
+
+model:
+  # HuggingFace repo ID or local path to an MLX-compatible model.
+  # See configs/model_registry.yaml for tested alternatives.
+  path: "mlx-community/Qwen2.5-3B-Instruct-4bit"
+  # For local weights:
+  # path: "/path/to/Qwen2.5-3B-Instruct"
+
+data:
+  # Paths written by scripts/prepare_data.py
+  # mlx-lm requires the directory to contain exactly train.jsonl / valid.jsonl
+  train: "data/processed/sft/train.jsonl"
+  valid: "data/processed/sft/valid.jsonl"
+  # Expected MLX-LM chat format: {"messages": [{"role": ..., "content": ...}]}
+  format: "chat"
+
+lora:
+  # LoRA rank — controls expressiveness of the adapter.
+  # rank=8 is the standard starting point for 3B models on Apple Silicon.
+  # Increase to 16 or 32 after pipeline validation if quality plateaus.
+  rank: 8
+
+  # Alpha scales the LoRA update magnitude. Conventionally set to rank or 2*rank.
+  # Higher alpha = stronger update per step. Start with 2*rank (16).
+  alpha: 16
+
+  # Regularization dropout on LoRA layers. 0.05 is conservative.
+  dropout: 0.05
+
+  # Number of transformer blocks from the END of the model to apply LoRA to.
+  # MUST be set explicitly — mlx-lm defaults to 0 (no LoRA) when absent.
+  # 16 covers roughly the last 44% of Qwen2.5-3B's 36 layers.
+  # Increase to 32 or -1 (all layers) for richer adaptation at higher memory cost.
+  num_layers: 16
+
+  # Target modules — q_proj and v_proj is the default mlx-lm applies internally.
+  # We do NOT pass this to mlx-lm directly; the comment here is for documentation.
+  # Adding k_proj and o_proj for richer adaptation requires mlx-lm version support.
+  # target_modules: [q_proj, v_proj]  # mlx-lm default — do not override
+
+training:
+  # Total training steps (mlx-lm uses iters, not epochs).
+  # Rule of thumb: iters ≈ (n_training_examples / batch_size) * desired_epochs
+  #   Sample data (2 examples, batch=4, 3 epochs) →  2 iters (use 100 to verify pipeline)
+  #   Real data  (200 examples, batch=4, 3 epochs) → 150 iters
+  #   Real data  (1000 examples, batch=4, 3 epochs) → 750 iters
+  # Start with 100 to verify the pipeline end-to-end on sample data.
+  iters: 100
+
+  # Examples per gradient step. Reduce to 2 if you hit memory pressure.
+  batch_size: 4
+
+  # AdamW learning rate. 1e-4 is a reasonable starting point for LoRA SFT.
+  learning_rate: 1.0e-4
+
+  # Gradient checkpointing trades compute for memory. Keep true on Apple Silicon.
+  grad_checkpoint: true
+
+  # Max token sequence length. 512 covers most Trace records comfortably.
+  # Increase to 1024 if you add longer context windows to the prompts.
+  max_seq_length: 512
+
+output:
+  # Where adapter weights are saved after training.
+  adapter_path: "outputs/sft_qwen25_3b"
+
+  # Save a checkpoint every N optimizer steps.
+  save_every: 100
+
+  # Print training loss every N steps.
+  steps_per_report: 10
+
+# ── Smoke-test override ───────────────────────────────────────────────────────
+# For fast iteration, override model.path with the 1.7B smoke-test model:
+#   python scripts/train_sft.py \
+#     --config configs/sft_trace_qwen25_3b.yaml \
+#     --model mlx-community/Qwen3-1.7B-4bit

@@ -205,3 +205,34 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ── iris-ft-lab specific ──────────────────────────────────────────────────────
+
+# Model weights / adapters — never commit large binaries
+outputs/
+models/
+*.safetensors
+*.gguf
+*.npz
+
+# Private data workspace — real personal traces live here locally
+data/raw_private/*
+data/processed/*
+# Preserve directory stubs
+!data/raw_private/.gitkeep
+!data/processed/.gitkeep
+
+# Accidental private data exports
+*.trace
+*.private.*
+*_private.*
+export_*.jsonl
+
+# MLX / training artifacts
+wandb/
+*.log
+mlx_model/
+
+# macOS
+.DS_Store
+.AppleDouble
