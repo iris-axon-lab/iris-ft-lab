@@ -1,0 +1,37 @@
+# Trace Layer 2 SFT v2 config — Qwen2.5-3B-Instruct + LoRA
+#
+# Trained on: data/sft_train_100.jsonl (100 synthetic examples, balanced 25/tier)
+# Random seed: 42 (used in prepare_data.py split)
+# Run: python scripts/train_sft.py --config configs/sft_trace_qwen25_3b_v2.yaml
+#
+# Key differences from v1:
+#   - data: sft_train_100.jsonl (100 examples, 25 per tier) vs. sample_sft.jsonl (3 examples)
+#   - iters: 100 (~3 epochs over 90 training examples at batch_size=4)
+#   - adapter_path: outputs/sft_qwen25_3b_v2
+
+model:
+  path: "mlx-community/Qwen2.5-3B-Instruct-4bit"
+
+data:
+  train: "data/processed/sft/train.jsonl"
+  valid: "data/processed/sft/valid.jsonl"
+  format: "chat"
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.05
+  num_layers: 16
+
+training:
+  # 90 train examples / batch_size 4 = ~22 iters/epoch; 100 iters ≈ 4.5 epochs
+  iters: 100
+  batch_size: 4
+  learning_rate: 1.0e-4
+  grad_checkpoint: true
+  max_seq_length: 512
+
+output:
+  adapter_path: "outputs/sft_qwen25_3b_v2"
+  save_every: 100
+  steps_per_report: 10
