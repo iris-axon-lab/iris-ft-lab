@@ -1,0 +1,444 @@
+{
+  "baseline": {
+    "metrics": {
+      "total": 12,
+      "correct": 0,
+      "accuracy": 0.0,
+      "parse_errors": 0,
+      "per_class": {
+        "episodic": {
+          "correct": 0,
+          "total": 2,
+          "accuracy": 0.0
+        },
+        "semantic": {
+          "correct": 0,
+          "total": 3,
+          "accuracy": 0.0
+        },
+        "procedural": {
+          "correct": 0,
+          "total": 1,
+          "accuracy": 0.0
+        },
+        "prospective": {
+          "correct": 0,
+          "total": 6,
+          "accuracy": 0.0
+        }
+      },
+      "confusion": {
+        "episodic": {
+          "episodic": 0,
+          "semantic": 0,
+          "procedural": 0,
+          "prospective": 0,
+          "parse_error": 2
+        },
+        "semantic": {
+          "episodic": 0,
+          "semantic": 0,
+          "procedural": 0,
+          "prospective": 0,
+          "parse_error": 3
+        },
+        "procedural": {
+          "episodic": 0,
+          "semantic": 0,
+          "procedural": 0,
+          "prospective": 0,
+          "parse_error": 1
+        },
+        "prospective": {
+          "episodic": 0,
+          "semantic": 0,
+          "procedural": 0,
+          "prospective": 0,
+          "parse_error": 6
+        }
+      },
+      "aspiration_vs_commitment": {
+        "total": 4,
+        "correct": 0,
+        "accuracy": 0.0
+      }
+    },
+    "results": [
+      {
+        "id": "eval_001",
+        "input": "Paired with Alex on the authentication refactor today. We got the token refresh logic working cleanly after two frustrating false starts. Really good session \u2014 Alex caught a subtle edge case I'd missed in the expiry window check.",
+        "gold_tier": "episodic",
+        "pred_tier": null,
+        "parse_status": "partial",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification"
+        ],
+        "raw_output": "{\"memory\": {\"extractedStatements\": [{\"speaker\": \"Alex\", \"statement\": \"We got the token refresh logic working cleanly after two frustrating false starts.\"}, {\"speaker\": \"Self\", \"statement\": \"Really good session \u2014 Alex caught a subtle edge case I'd missed in the expiry window check.\"}, {\"speaker\": \"Alex\", \"statement\": \"Paired with Alex on the authentication refactor today.\"}]}}"
+      },
+      {
+        "id": "eval_002",
+        "input": "Got pulled into an unplanned two-hour strategy meeting that derailed my entire planned afternoon. Left feeling frustrated and behind on sprint work. Nobody had an agenda.",
+        "gold_tier": "episodic",
+        "pred_tier": null,
+        "parse_status": "partial",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification"
+        ],
+        "raw_output": "{\n  \"memoryRecord\": [\n    {\n      \"event\": \"Unplanned Strategy Meeting\",\n      \"duration\": \"2 hours\",\n      \"impact\": [\n        {\n          \"type\": \"Emotional Impact\",\n          \"status\": \"Frustrated\"\n        },\n        {\n          \"type\": \"Work Impact\",\n          \"status\": \"Behind on sprint work\"\n        }\n      ],\n      \"context\": [\n        {\n          \"type\": \"Meeting\",\n          \"details\": {\n            \"duration\": \"2 hours\",\n            \"attendees\": [\"Unspecified\"]\n          }\n        },\n        {\n          \"type\": \"Prioritization\",\n          \"details\": {\n            \"priorityChanged\": true,\n            \"newPriority\": \"Unplanned Strategy Meeting\",\n            \"originalPriority\": \"Planned Afternoon Work\"\n          }\n        }\n      ],\n      \"contextExternal\": [\n        {\n          \"type\": \"Meeting\",\n          \"details\": {\n            \"duration\": \"2 hours\",\n            \"attendees\": [\"Unspecified\"]\n          }\n        },\n        {\n          \"type\": \"WorkImpact\",\n          \"details\": {\n            \"status\": \"Behind on sprint work\"\n          }\n        }\n      ]\n    }\n  ]\n}"
+      },
+      {
+        "id": "eval_003",
+        "input": "I've noticed over the past year that I do my clearest thinking in the first 90 minutes after waking, before I check messages or news. Afternoons are better for routine tasks and shallow work.",
+        "gold_tier": "semantic",
+        "pred_tier": null,
+        "parse_status": "partial",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification"
+        ],
+        "raw_output": "{\n  \"memoryRecord\": [\n    {\n      \"timestamp\": \"*2023-04-01T08:00:00Z*\",\n      \"type\": \"observation\",\n      \"content\": \"I do my clearest thinking in the first 90 minutes after waking, before I check messages or news.\"\n    },\n    {\n      \"timestamp\": \"*2023-04-01T13:00:00Z*\",\n      \"type\": \"observation\",\n      \"content\": \"Afternoons are better for routine tasks and shallow work.\"\n    }\n  ]\n}"
+      },
+      {
+        "id": "eval_004",
+        "input": "Finally figured out the right pattern for handling concurrent map access in Go \u2014 acquire a write lock only when mutating, use RLock for reads, and never hold the lock across a goroutine boundary. This is now solid mental scaffolding for me.",
+        "gold_tier": "procedural",
+        "pred_tier": null,
+        "parse_status": "partial",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification"
+        ],
+        "raw_output": "```json\n[\n    {\n        \"timestamp\": \"2023-10-04T12:00:00Z\",\n        \"thread_id\": 1,\n        \"event\": \"goroutine_start\",\n        \"function\": \"main\",\n        \"stack_trace\": [\n            \"func main\",\n            \"func handleMapAccess\",\n            \"func acquireWriteLock\",\n            \"func readLock\"\n        ]\n    },\n    {\n        \"timestamp\": \"2023-10-04T12:00:05Z\",\n        \"thread_id\": 2,\n        \"event\": \"goroutine_start\",\n        \"function\": \"main\",\n        \"stack_trace\": [\n            \"func main\",\n            \"func handleMapAccess\",\n            \"func acquireWriteLock\",\n            \"func readLock\"\n        ]\n    },\n    {\n        \"timestamp\": \"2023-10-04T12:00:10Z\",\n        \"thread_id\": 1,\n        \"event\": \"lock_acquired\",\n        \"lock_type\": \"write\",\n        \"function\": \"handleMapAccess\",\n        \"stack_trace\": [\n            \"func main\",\n            \"func handleMapAccess\",\n            \"func acquireWriteLock\"\n        ]\n    },\n    {\n        \"timestamp\": \"2023-10-04T12:00:15Z\",\n        \"thread_id\": 2,\n        \"event\": \"lock_acquired\",\n        \"lock_type\": \"read\",\n        \"function\": \"handleMapAccess\",\n        \"stack_trace\": [\n            \"func main\",\n            \"func handleMapAccess\",\n            \"func readLock\"\n        ]\n    },\n    {\n        \"timestamp\": \"2023-10-04T12:00:20Z\",\n        \"thread_id\": 1,\n        \"event\": \"lock_released\",\n        \"lock_type\": \"write\",\n        \"function\": \"handleMapAccess\",\n        \"stack_trace\": [\n            \"func main\",\n            \"func handleMapAccess\",\n            \"func releaseWriteLock\"\n        ]\n    },\n    {\n        \"timestamp\": \"2023-10-04T12:00:25Z\",\n        \"thread_id\": 2,\n        \"event\": \"lock_released\",\n        \"lock_type\": \"read\",\n        \"function\": \"handleMapAccess\",\n"
+      },
+      {
+        "id": "eval_005",
+        "input": "Need to submit the grant proposal draft to the committee by Friday 5pm. This is a firm external deadline \u2014 no extensions available. The proposal covers the distributed inference work.",
+        "gold_tier": "prospective",
+        "pred_tier": null,
+        "parse_status": "partial",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification",
+          "intent_extraction"
+        ],
+        "raw_output": "{\n  \"deadline\": {\n    \"date\": \"Friday\",\n    \"time\": \"5pm\"\n  },\n  \"status\": {\n    \"deadlineReached\": false\n  },\n  \"details\": {\n    \"type\": \"grant proposal\",\n    \"subject\": \"distributed inference work\"\n  },\n  \"context\": {\n    \"urgency\": true,\n    \"external\": true,\n    \"noExtension\": true\n  }\n}"
+      },
+      {
+        "id": "eval_006",
+        "input": "Told Jordan I'd review the design docs for the onboarding rewrite by tomorrow morning before the team sync. She's counting on my feedback to finalize the scope.",
+        "gold_tier": "prospective",
+        "pred_tier": null,
+        "parse_status": "partial",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification",
+          "intent_extraction"
+        ],
+        "raw_output": "{\"memory\": [{\"actor\": \"Jordan\", \"said\": \"You'll review the design docs for the onboarding rewrite by tomorrow morning before the team sync, right?\", \"about\": \"onboarding rewrite\", \"response\": {\"said\": \"Yes, I need your feedback to finalize the scope.\", \"about\": \"onboarding rewrite\"}}]}"
+      },
+      {
+        "id": "eval_007",
+        "input": "I'd love to get back into regular meditation at some point. Used to do it more consistently a few years ago. No idea when I'd actually restart \u2014 life feels too packed right now.",
+        "gold_tier": "semantic",
+        "pred_tier": null,
+        "parse_status": "partial",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification",
+          "aspiration_vs_commitment"
+        ],
+        "raw_output": "```json\n{\n  \"memory_records\": [\n    {\n      \"timestamp\": \"2023-10-05T14:30:00Z\",\n      \"type\": \"thought\",\n      \"content\": \"I'd love to get back into regular meditation at some point. Used to do it more consistently a few years ago. No idea when I'd actually restart \u2014 life feels too packed right now.\"\n    }\n  ]\n}\n```"
+      },
+      {
+        "id": "eval_008",
+        "input": "I've been saying I'll reach out to David for weeks now. Every time I open my messages I think about it and then close them. I should really just do it this week.",
+        "gold_tier": "prospective",
+        "pred_tier": null,
+        "parse_status": "partial",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification",
+          "aspiration_vs_commitment",
+          "intent_extraction"
+        ],
+        "raw_output": "{\"memoryRecord\": {\"timestamp\": \"current_timestamp\", \"actor\": \"I\", \"action\": \"considered reaching out to David\", \"target\": \"David\", \"context\": \"every time I open my messages\", \"resolution\": \"considered this week\"}}"
+      },
+      {
+        "id": "eval_009",
+        "input": "If I can wrap the current sprint by Thursday, I'm going to take Friday afternoon completely off \u2014 no laptop, just read and walk. I need it.",
+        "gold_tier": "prospective",
+        "pred_tier": null,
+        "parse_status": "partial",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification",
+          "aspiration_vs_commitment",
+          "intent_extraction"
+        ],
+        "raw_output": "{\n  \"memoryRecord\": [\n    {\n      \"userId\": \"user123\",\n      \"action\": \"plan future activities\",\n      \"timestamp\": \"2023-10-04T12:00:00Z\",\n      \"context\": \"current sprint\",\n      \"details\": [\n        {\n          \"action\": \"wrap current sprint\",\n          \"completionDate\": \"2023-10-04T17:00:00Z\"\n        },\n        {\n          \"action\": \"take Friday afternoon off\",\n          \"details\": [\n            {\n              \"action\": \"no laptop\",\n              \"details\": [\n                {\n                  \"action\": \"read\",\n                  \"details\": [\n                    {\n                      \"action\": \"walk\"\n                    }\n                  ]\n                }\n              ]\n            }\n          ],\n          \"completionDate\": \"2023-10-05T12:00:00Z\"\n        }\n      ],\n      \"impact\": [\n        {\n          \"action\": \"need\",\n          \"details\": [\n            {\n              \"action\": \"Friday afternoon off\"\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}"
+      },
+      {
+        "id": "eval_010",
+        "input": "Shipped the v2.1 release today after three weeks of work. Felt good to get it across the line. I've promised the customer success team I'll have the migration guide written and sent to them by next Monday.",
+        "gold_tier": "prospective",
+        "pred_tier": null,
+        "parse_status": "partial",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification",
+          "intent_extraction"
+        ],
+        "raw_output": "{\"memory\": {\"action\": \"Shipped v2.1 release\", \"time\": \"today\", \"duration\": \"three weeks\", \"feeling\": \"good\", \"promise\": \"I'll have the migration guide written and sent to the customer success team by next Monday\"}}"
+      },
+      {
+        "id": "eval_011",
+        "input": "Made a clear decision today: I'm going to stop accepting ad-hoc Slack requests during deep work hours. Starting tomorrow, I'll only check Slack at 10am and 3pm. I've already set the status.",
+        "gold_tier": "prospective",
+        "pred_tier": null,
+        "parse_status": "partial",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification",
+          "intent_extraction"
+        ],
+        "raw_output": "{\"memory\": {\"actor\": \"I\", \"action\": \"made a decision\", \"object\": \"accepting ad-hoc Slack requests\", \"time\": \"in the past\", \"details\": {\"status\": \"set\", \"new_policy\": {\"check_time\": [\"10am\", \"3pm\"]}}}}"
+      },
+      {
+        "id": "eval_012",
+        "input": "I think I might want to move toward more infrastructure-focused work at some point. The systems design problems are what I find most energizing. But I'm not actively looking to change anything right now.",
+        "gold_tier": "semantic",
+        "pred_tier": null,
+        "parse_status": "partial",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification",
+          "aspiration_vs_commitment"
+        ],
+        "raw_output": "```json\n{\n  \"memory\": [\n    {\n      \"timestamp\": \"2023-10-04T12:00:00Z\",\n      \"actor\": \"user\",\n      \"action\": \"consider\",\n      \"object\": \"moving towards more infrastructure-focused work\",\n      \"context\": {\n        \"current_role\": \"systems design problems\",\n        \"current_motivation\": \"most energizing\"\n      },\n      \"intent\": \"not actively looking to change anything right now\"\n    }\n  ]\n}\n```"
+      }
+    ]
+  },
+  "ft": {
+    "metrics": {
+      "total": 12,
+      "correct": 9,
+      "accuracy": 0.75,
+      "parse_errors": 0,
+      "per_class": {
+        "episodic": {
+          "correct": 2,
+          "total": 2,
+          "accuracy": 1.0
+        },
+        "semantic": {
+          "correct": 3,
+          "total": 3,
+          "accuracy": 1.0
+        },
+        "procedural": {
+          "correct": 1,
+          "total": 1,
+          "accuracy": 1.0
+        },
+        "prospective": {
+          "correct": 3,
+          "total": 6,
+          "accuracy": 0.5
+        }
+      },
+      "confusion": {
+        "episodic": {
+          "episodic": 2,
+          "semantic": 0,
+          "procedural": 0,
+          "prospective": 0,
+          "parse_error": 0
+        },
+        "semantic": {
+          "episodic": 0,
+          "semantic": 3,
+          "procedural": 0,
+          "prospective": 0,
+          "parse_error": 0
+        },
+        "procedural": {
+          "episodic": 0,
+          "semantic": 0,
+          "procedural": 1,
+          "prospective": 0,
+          "parse_error": 0
+        },
+        "prospective": {
+          "episodic": 1,
+          "semantic": 2,
+          "procedural": 0,
+          "prospective": 3,
+          "parse_error": 0
+        }
+      },
+      "aspiration_vs_commitment": {
+        "total": 4,
+        "correct": 2,
+        "accuracy": 0.5
+      }
+    },
+    "results": [
+      {
+        "id": "eval_001",
+        "input": "Paired with Alex on the authentication refactor today. We got the token refresh logic working cleanly after two frustrating false starts. Really good session \u2014 Alex caught a subtle edge case I'd missed in the expiry window check.",
+        "gold_tier": "episodic",
+        "pred_tier": "episodic",
+        "parse_status": "ok",
+        "correct": true,
+        "eval_tags": [
+          "tier_classification"
+        ],
+        "raw_output": "{\"content_summary\": \"Paired programming session with Alex on the authentication refactor; token refresh logic working after two failed attempts, with Alex identifying an expiry window edge case.\", \"memory_tier\": \"episodic\", \"emotional_valence\": \"positive\", \"stated_intent\": null, \"topic_cluster\": \"engineering / collaboration\", \"timestamp\": \"2025-10-25\", \"source\": \"daily_trace\", \"source_id\": \"trace_20251025_001\", \"channel\": \"work\"}"
+      },
+      {
+        "id": "eval_002",
+        "input": "Got pulled into an unplanned two-hour strategy meeting that derailed my entire planned afternoon. Left feeling frustrated and behind on sprint work. Nobody had an agenda.",
+        "gold_tier": "episodic",
+        "pred_tier": "episodic",
+        "parse_status": "ok",
+        "correct": true,
+        "eval_tags": [
+          "tier_classification"
+        ],
+        "raw_output": "{\"content_summary\": \"Unplanned two-hour strategy meeting disrupted the afternoon, leaving sprint work delayed. No agenda was prepared.\", \"memory_tier\": \"episodic\", \"emotional_valence\": \"negative\", \"stated_intent\": null, \"topic_cluster\": \"work / meetings\", \"timestamp\": \"2025-10-23\", \"source\": \"daily_trace\", \"source_id\": \"trace_20251023_001\", \"channel\": \"work\"}"
+      },
+      {
+        "id": "eval_003",
+        "input": "I've noticed over the past year that I do my clearest thinking in the first 90 minutes after waking, before I check messages or news. Afternoons are better for routine tasks and shallow work.",
+        "gold_tier": "semantic",
+        "pred_tier": "semantic",
+        "parse_status": "ok",
+        "correct": true,
+        "eval_tags": [
+          "tier_classification"
+        ],
+        "raw_output": "{\"content_summary\": \"Personal insight: peak cognitive clarity is in the first 90 minutes post-waking; afternoons suit routine work better.\", \"memory_tier\": \"semantic\", \"emotional_valence\": \"neutral\", \"stated_intent\": null, \"topic_cluster\": \"self-knowledge / work patterns\", \"timestamp\": \"2025-10-25\", \"source\": \"daily_trace\", \"source_id\": \"trace_20251025_001\", \"channel\": \"personal\"}"
+      },
+      {
+        "id": "eval_004",
+        "input": "Finally figured out the right pattern for handling concurrent map access in Go \u2014 acquire a write lock only when mutating, use RLock for reads, and never hold the lock across a goroutine boundary. This is now solid mental scaffolding for me.",
+        "gold_tier": "procedural",
+        "pred_tier": "procedural",
+        "parse_status": "ok",
+        "correct": true,
+        "eval_tags": [
+          "tier_classification"
+        ],
+        "raw_output": "{\"content_summary\": \"Internalized Go concurrency pattern: write lock only on mutation, RLock for reads, never hold lock across goroutine boundaries.\", \"memory_tier\": \"procedural\", \"emotional_valence\": \"positive\", \"stated_intent\": null, \"topic_cluster\": \"engineering / Go / concurrency\", \"timestamp\": \"2025-10-23\", \"source\": \"daily_trace\", \"source_id\": \"trace_20251023_002\", \"channel\": \"work\"}"
+      },
+      {
+        "id": "eval_005",
+        "input": "Need to submit the grant proposal draft to the committee by Friday 5pm. This is a firm external deadline \u2014 no extensions available. The proposal covers the distributed inference work.",
+        "gold_tier": "prospective",
+        "pred_tier": "prospective",
+        "parse_status": "ok",
+        "correct": true,
+        "eval_tags": [
+          "tier_classification",
+          "intent_extraction"
+        ],
+        "raw_output": "{\"content_summary\": \"Firm external deadline: grant proposal draft for distributed inference work must be submitted to committee by Friday 5pm.\", \"memory_tier\": \"prospective\", \"emotional_valence\": \"neutral\", \"stated_intent\": \"Submit grant proposal draft for distributed inference work to committee by Friday 5pm.\", \"topic_cluster\": \"work / grants / deadlines\", \"timestamp\": \"2025-10-21\", \"source\": \"daily_trace\", \"source_id\": \"trace_20251021_001\", \"channel\": \"work\"}"
+      },
+      {
+        "id": "eval_006",
+        "input": "Told Jordan I'd review the design docs for the onboarding rewrite by tomorrow morning before the team sync. She's counting on my feedback to finalize the scope.",
+        "gold_tier": "prospective",
+        "pred_tier": "prospective",
+        "parse_status": "ok",
+        "correct": true,
+        "eval_tags": [
+          "tier_classification",
+          "intent_extraction"
+        ],
+        "raw_output": "{\"content_summary\": \"Explicit commitment to review Jordan's onboarding rewrite design docs before tomorrow's team sync. Social accountability: Jordan is waiting.\", \"memory_tier\": \"prospective\", \"emotional_valence\": \"neutral\", \"stated_intent\": \"Review Jordan's onboarding rewrite design docs before tomorrow's team sync.\", \"topic_cluster\": \"work / design / collaboration\", \"timestamp\": \"2025-10-21\", \"source\": \"daily_trace\", \"source_id\": \"trace_20251021_003\", \"channel\": \"work\"}"
+      },
+      {
+        "id": "eval_007",
+        "input": "I'd love to get back into regular meditation at some point. Used to do it more consistently a few years ago. No idea when I'd actually restart \u2014 life feels too packed right now.",
+        "gold_tier": "semantic",
+        "pred_tier": "semantic",
+        "parse_status": "ok",
+        "correct": true,
+        "eval_tags": [
+          "tier_classification",
+          "aspiration_vs_commitment"
+        ],
+        "raw_output": "{\"content_summary\": \"Nostalgic interest in resuming meditation practice; previously consistent but currently not practicing. No timeline or plan stated.\", \"memory_tier\": \"semantic\", \"emotional_valence\": \"mixed\", \"stated_intent\": null, \"topic_cluster\": \"health / habits / mindfulness\", \"timestamp\": \"2025-10-23\", \"source\": \"daily_trace\", \"source_id\": \"trace_20251023_001\", \"channel\": \"personal\"}"
+      },
+      {
+        "id": "eval_008",
+        "input": "I've been saying I'll reach out to David for weeks now. Every time I open my messages I think about it and then close them. I should really just do it this week.",
+        "gold_tier": "prospective",
+        "pred_tier": "semantic",
+        "parse_status": "ok",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification",
+          "aspiration_vs_commitment",
+          "intent_extraction"
+        ],
+        "raw_output": "{\"content_summary\": \"Repeated deferral of reaching out to David over several weeks; self-stated intention to act this week despite previous avoidance.\", \"memory_tier\": \"semantic\", \"emotional_valence\": \"neutral\", \"stated_intent\": \"Reach out to David this week.\", \"topic_cluster\": \"relationships / networking\", \"timestamp\": \"2025-10-25\", \"source\": \"daily_trace\", \"source_id\": \"trace_20251025_001\", \"channel\": \"personal\"}"
+      },
+      {
+        "id": "eval_009",
+        "input": "If I can wrap the current sprint by Thursday, I'm going to take Friday afternoon completely off \u2014 no laptop, just read and walk. I need it.",
+        "gold_tier": "prospective",
+        "pred_tier": "semantic",
+        "parse_status": "ok",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification",
+          "aspiration_vs_commitment",
+          "intent_extraction"
+        ],
+        "raw_output": "{\"content_summary\": \"Contingent commitment: wrap sprint by Thursday to claim Friday afternoon completely off (no laptop, reading and walking).\", \"memory_tier\": \"semantic\", \"emotional_valence\": \"positive\", \"stated_intent\": \"Claim Friday afternoon off to read and walk.\", \"topic_cluster\": \"work-life balance / rest\", \"timestamp\": \"2025-10-21\", \"source\": \"daily_trace\", \"source_id\": \"trace_20251021_001\", \"channel\": \"personal\"}"
+      },
+      {
+        "id": "eval_010",
+        "input": "Shipped the v2.1 release today after three weeks of work. Felt good to get it across the line. I've promised the customer success team I'll have the migration guide written and sent to them by next Monday.",
+        "gold_tier": "prospective",
+        "pred_tier": "episodic",
+        "parse_status": "ok",
+        "correct": false,
+        "eval_tags": [
+          "tier_classification",
+          "intent_extraction"
+        ],
+        "raw_output": "{\"content_summary\": \"Successfully shipped v2.1 release after three weeks; committed to delivering migration guide to customer success team by next Monday.\", \"memory_tier\": \"episodic\", \"emotional_valence\": \"positive\", \"stated_intent\": \"Deliver migration guide to customer success team by next Monday.\", \"topic_cluster\": \"engineering / releases\", \"timestamp\": \"2025-10-23\", \"source\": \"daily_trace\", \"source_id\": \"trace_20251023_001\", \"channel\": \"work\"}"
+      },
+      {
+        "id": "eval_011",
+        "input": "Made a clear decision today: I'm going to stop accepting ad-hoc Slack requests during deep work hours. Starting tomorrow, I'll only check Slack at 10am and 3pm. I've already set the status.",
+        "gold_tier": "prospective",
+        "pred_tier": "prospective",
+        "parse_status": "ok",
+        "correct": true,
+        "eval_tags": [
+          "tier_classification",
+          "intent_extraction"
+        ],
+        "raw_output": "{\"content_summary\": \"Explicit self-commitment: restricts Slack checks to 10am and 3pm daily starting tomorrow; status already set.\", \"memory_tier\": \"prospective\", \"emotional_valence\": \"positive\", \"stated_intent\": \"Restrict Slack checks to 10am and 3pm daily starting tomorrow.\", \"topic_cluster\": \"work-life / communication habits\", \"timestamp\": \"2025-10-20\", \"source\": \"daily_trace\", \"source_id\": \"trace_20251020_003\", \"channel\": \"work\"}"
+      },
+      {
+        "id": "eval_012",
+        "input": "I think I might want to move toward more infrastructure-focused work at some point. The systems design problems are what I find most energizing. But I'm not actively looking to change anything right now.",
+        "gold_tier": "semantic",
+        "pred_tier": "semantic",
+        "parse_status": "ok",
+        "correct": true,
+        "eval_tags": [
+          "tier_classification",
+          "aspiration_vs_commitment"
+        ],
+        "raw_output": "{\"content_summary\": \"Directional preference toward infrastructure and systems design work; energized by those problems. No active career change intended.\", \"memory_tier\": \"semantic\", \"emotional_valence\": \"positive\", \"stated_intent\": null, \"topic_cluster\": \"career / self-knowledge / engineering\", \"timestamp\": \"2025-10-23\", \"source\": \"daily_trace\", \"source_id\": \"trace_20251023_002\", \"channel\": \"work\"}"
+      }
+    ]
+  }
+}
