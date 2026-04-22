@@ -5,16 +5,15 @@ Generate synthetic SFT training data for Trace Layer 2 extraction.
 No model or GPU required — examples are constructed from templates.
 Output is a JSONL file in mlx-lm chat format, ready for prepare_data.py.
 
-Coverage: 65 examples
-  - 15 episodic
-  - 15 semantic
-  - 10 procedural
-  - 25 prospective  (including 10 aspiration-vs-commitment boundary cases)
+Coverage: 100 examples — 25 per tier (balanced)
+  - 25 episodic
+  - 25 semantic
+  - 25 procedural
+  - 25 prospective  (including aspiration-vs-commitment boundary cases)
 
 Usage:
   python scripts/generate_synthetic_sft.py
-  python scripts/generate_synthetic_sft.py --output data/sample_sft_extended.jsonl
-  python scripts/generate_synthetic_sft.py --output data/sample_sft_extended.jsonl --shuffle --seed 42
+  python scripts/generate_synthetic_sft.py --output data/sft_train_100.jsonl --shuffle --seed 42
 """
 
 import argparse
@@ -620,9 +619,330 @@ PROSPECTIVE = [
 ]
 
 
+# ── Additional episodic examples (10, to reach 25 total) ─────────────────────
+
+EPISODIC_EXTRA = [
+    make_example(
+        "Gave my first conference talk today at PyCon. About 200 people in the room. "
+        "Felt nervous for the first five minutes then found my rhythm. Good questions from the audience afterward.",
+        {"content_summary": "First conference talk at PyCon; ~200 attendees, initial nerves gave way to fluency, received engaged audience questions.",
+         "memory_tier": "episodic", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "career / public speaking", "timestamp": "2025-11-01",
+         "source": "daily_trace", "source_id": "trace_20251101_001", "channel": "work"},
+    ),
+    make_example(
+        "Had a really rough onboarding session with the new contractor today. "
+        "Communication was unclear from the start and we wasted two hours on the wrong codebase section.",
+        {"content_summary": "Difficult onboarding session with new contractor; miscommunication led to two hours spent on the wrong codebase section.",
+         "memory_tier": "episodic", "emotional_valence": "negative", "stated_intent": None,
+         "topic_cluster": "work / onboarding / communication", "timestamp": "2025-11-02",
+         "source": "daily_trace", "source_id": "trace_20251102_001", "channel": "work"},
+    ),
+    make_example(
+        "Reached 100 days of consistent morning journaling today. Never expected to stick with it this long. "
+        "Feels like a real habit now, not an effort.",
+        {"content_summary": "100-day milestone of consistent morning journaling achieved; now feels habitual rather than effortful.",
+         "memory_tier": "episodic", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "habits / reflection / milestones", "timestamp": "2025-11-03",
+         "source": "daily_trace", "source_id": "trace_20251103_001", "channel": "personal"},
+    ),
+    make_example(
+        "Accidentally deleted the wrong branch in production. Spent two hours recovering from the backup. "
+        "No data lost but deeply embarrassing. Filed an incident report.",
+        {"content_summary": "Accidentally deleted a production branch; two-hour recovery from backup with no data loss. Incident report filed.",
+         "memory_tier": "episodic", "emotional_valence": "negative", "stated_intent": None,
+         "topic_cluster": "engineering / incidents / git", "timestamp": "2025-11-04",
+         "source": "daily_trace", "source_id": "trace_20251104_001", "channel": "work"},
+    ),
+    make_example(
+        "Had a surprisingly good 1:1 with my skip-level today. She asked what was blocking me and actually listened. "
+        "First time I've felt heard at that level in a while.",
+        {"content_summary": "Positive skip-level 1:1; manager actively listened to blockers, first time feeling genuinely heard at that level in recent memory.",
+         "memory_tier": "episodic", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "career / management / relationships", "timestamp": "2025-11-05",
+         "source": "daily_trace", "source_id": "trace_20251105_001", "channel": "work"},
+    ),
+    make_example(
+        "Hiked the Marin Headlands loop today — about 12 miles. First proper long hike in over a year. "
+        "Body held up better than expected. Good to be outside for that long.",
+        {"content_summary": "12-mile Marin Headlands hike completed; first extended hike in over a year with better-than-expected physical performance.",
+         "memory_tier": "episodic", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "health / exercise / outdoors", "timestamp": "2025-11-06",
+         "source": "daily_trace", "source_id": "trace_20251106_001", "channel": "personal"},
+    ),
+    make_example(
+        "The client rejected the proposal we spent four weeks on. They changed the spec mid-process "
+        "and now want something completely different. Entire team is frustrated.",
+        {"content_summary": "Four-week proposal rejected by client due to mid-process spec change; team morale low following the outcome.",
+         "memory_tier": "episodic", "emotional_valence": "negative", "stated_intent": None,
+         "topic_cluster": "work / client / projects", "timestamp": "2025-11-07",
+         "source": "daily_trace", "source_id": "trace_20251107_001", "channel": "work"},
+    ),
+    make_example(
+        "Passed my AWS Solutions Architect exam on the first attempt today. "
+        "Studied for six weeks. Higher score than I expected — 874.",
+        {"content_summary": "Passed AWS Solutions Architect certification exam on first attempt with a score of 874 after six weeks of study.",
+         "memory_tier": "episodic", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "learning / certifications / cloud", "timestamp": "2025-11-08",
+         "source": "daily_trace", "source_id": "trace_20251108_001", "channel": "work"},
+    ),
+    make_example(
+        "Tried pair programming with the junior engineer on the cache invalidation logic. "
+        "Slower than coding alone but she asked questions that caught two bugs I would have missed.",
+        {"content_summary": "Pair programming session on cache invalidation with junior engineer; slower pace but two bugs caught by her questions that would have been missed solo.",
+         "memory_tier": "episodic", "emotional_valence": "mixed", "stated_intent": None,
+         "topic_cluster": "engineering / mentorship / collaboration", "timestamp": "2025-11-09",
+         "source": "daily_trace", "source_id": "trace_20251109_001", "channel": "work"},
+    ),
+    make_example(
+        "Submitted the resignation letter today. Four years at this company. "
+        "Felt surreal hitting send. Warm but bittersweet.",
+        {"content_summary": "Resignation letter submitted after four years at the company; emotionally surreal and bittersweet.",
+         "memory_tier": "episodic", "emotional_valence": "mixed", "stated_intent": None,
+         "topic_cluster": "career / transitions", "timestamp": "2025-11-10",
+         "source": "daily_trace", "source_id": "trace_20251110_001", "channel": "work"},
+    ),
+]
+
+# ── Additional procedural examples (15, to reach 25 total) ───────────────────
+
+PROCEDURAL_EXTRA = [
+    make_example(
+        "Figured out how to reliably estimate engineering tasks: give a best-case, "
+        "likely-case, and worst-case, always multiply the likely case by 1.5 for the "
+        "external commitment. Two years of doing this has made my estimates accurate.",
+        {"content_summary": "Reliable estimation practice: three-point estimate (best/likely/worst), externally commit to 1.5× the likely-case. Two years of validation.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "engineering / project management / estimation", "timestamp": "2025-11-01",
+         "source": "daily_trace", "source_id": "trace_20251101_002", "channel": "work"},
+    ),
+    make_example(
+        "The way I handle ambiguous requirements now: write out what I think they mean in one sentence, "
+        "send it to the stakeholder as a question not a proposal, and don't build anything until I get a yes. "
+        "Saves me rework every single time.",
+        {"content_summary": "Ambiguous requirement handling: summarize interpretation as a question, await explicit confirmation before building. Consistently prevents rework.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "engineering / communication / requirements", "timestamp": "2025-11-02",
+         "source": "daily_trace", "source_id": "trace_20251102_002", "channel": "work"},
+    ),
+    make_example(
+        "I've found the most effective way to learn a new codebase: run the tests first, "
+        "then read the entry point file, then trace the critical path for the main use case. "
+        "Never start by reading README or docs.",
+        {"content_summary": "Effective codebase onboarding sequence: run tests → read entry point → trace critical path for main use case. Docs last.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "engineering / learning / onboarding", "timestamp": "2025-11-03",
+         "source": "daily_trace", "source_id": "trace_20251103_002", "channel": "work"},
+    ),
+    make_example(
+        "The pattern I use for database migrations now: always write the rollback script before the migration, "
+        "test both in staging, and never deploy the forward migration on a Friday. "
+        "Has saved me twice.",
+        {"content_summary": "Database migration practice: write rollback before migration, test both in staging, never deploy on Fridays. Prevented incidents twice.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "engineering / databases / deployment", "timestamp": "2025-11-04",
+         "source": "daily_trace", "source_id": "trace_20251104_002", "channel": "work"},
+    ),
+    make_example(
+        "The best way I've found to keep meetings productive: own the agenda, "
+        "send it 24 hours before, explicitly label which items are decisions vs. updates vs. discussion, "
+        "and end 5 minutes early to allow bio breaks.",
+        {"content_summary": "Effective meeting facilitation: send agenda 24h ahead, label item types (decision/update/discussion), end 5 minutes early.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "management / communication / meetings", "timestamp": "2025-11-05",
+         "source": "daily_trace", "source_id": "trace_20251105_002", "channel": "work"},
+    ),
+    make_example(
+        "When I'm reviewing someone else's architecture, I've learned to ask 'what's the failure mode of this?' "
+        "for each component before evaluating the happy path. Finds more real problems than "
+        "trying to improve the design.",
+        {"content_summary": "Architecture review technique: ask 'what's the failure mode?' for each component before evaluating the happy path. More effective than design critique.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "engineering / architecture / review", "timestamp": "2025-11-06",
+         "source": "daily_trace", "source_id": "trace_20251106_002", "channel": "work"},
+    ),
+    make_example(
+        "For writing proposals or technical documents, I now write the executive summary last "
+        "but first in the document. The act of forcing a one-paragraph summary always reveals "
+        "whether the underlying argument is sound.",
+        {"content_summary": "Document writing technique: write executive summary last (but position first). Forces clarity check on the underlying argument's soundness.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "writing / communication / process", "timestamp": "2025-11-07",
+         "source": "daily_trace", "source_id": "trace_20251107_002", "channel": "work"},
+    ),
+    make_example(
+        "The way I handle being overwhelmed at work: list everything in my head on paper first "
+        "(don't organize, just dump), then highlight the one thing that if done would most reduce the overwhelm. "
+        "Do that one thing before anything else.",
+        {"content_summary": "Overwhelm management technique: brain dump without organizing → identify one highest-leverage item → execute before anything else.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "productivity / stress management", "timestamp": "2025-11-08",
+         "source": "daily_trace", "source_id": "trace_20251108_002", "channel": "personal"},
+    ),
+    make_example(
+        "For async code reviews I've found: always leave one positive, specific comment for every three "
+        "change requests. Not to be nice — it tells the author what to preserve. "
+        "Review quality went up when I started doing this.",
+        {"content_summary": "Code review practice: leave one specific positive comment per three change requests to signal what to preserve. Improves review quality.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "engineering / code review / communication", "timestamp": "2025-11-09",
+         "source": "daily_trace", "source_id": "trace_20251109_002", "channel": "work"},
+    ),
+    make_example(
+        "I've found that when I'm procrastinating on a task, it's almost always because "
+        "I haven't defined the first physical action clearly enough. Once I can write "
+        "'open file X and change line Y', I start immediately.",
+        {"content_summary": "Procrastination insight: root cause is usually insufficient specificity of next action. Defining a concrete first step immediately removes the block.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "productivity / habits / self-knowledge", "timestamp": "2025-11-10",
+         "source": "daily_trace", "source_id": "trace_20251110_002", "channel": "personal"},
+    ),
+    make_example(
+        "The pattern for giving feedback to senior peers: ask if they want feedback first, "
+        "then lead with what the work is trying to do (their goal), then offer the observation "
+        "as a question not a judgment. Never skip step one.",
+        {"content_summary": "Senior peer feedback approach: ask permission first, name their goal, offer observation as question not judgment.",
+         "memory_tier": "procedural", "emotional_valence": "neutral", "stated_intent": None,
+         "topic_cluster": "communication / feedback / relationships", "timestamp": "2025-11-11",
+         "source": "daily_trace", "source_id": "trace_20251111_002", "channel": "work"},
+    ),
+    make_example(
+        "I now always start any new data pipeline with an end-to-end test using a tiny sample — "
+        "3 rows max — before touching the real dataset. Catches schema issues and wiring bugs "
+        "in 2 minutes instead of 2 hours.",
+        {"content_summary": "Data pipeline development practice: run end-to-end test on 3-row sample before touching real data. Catches schema and wiring issues in minutes vs. hours.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "engineering / data / testing", "timestamp": "2025-11-12",
+         "source": "daily_trace", "source_id": "trace_20251112_002", "channel": "work"},
+    ),
+    make_example(
+        "Learned that the right way to introduce process changes on a team is: "
+        "pilot it on your own work first for two weeks, then share the outcome as data "
+        "rather than a proposal. Much lower resistance than proposing upfront.",
+        {"content_summary": "Process change adoption: self-pilot for two weeks first, then share outcome data instead of a proposal. Reduces team resistance significantly.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "management / team / change", "timestamp": "2025-11-13",
+         "source": "daily_trace", "source_id": "trace_20251113_002", "channel": "work"},
+    ),
+    make_example(
+        "The way I recover from decision paralysis on technical choices: "
+        "write down what would be true if option A was right, and what would be true "
+        "if option B was right. Usually one set of conditions is clearly more realistic.",
+        {"content_summary": "Decision paralysis technique for technical choices: list preconditions for each option being correct. Usually one option's preconditions are more realistic.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "engineering / decision-making", "timestamp": "2025-11-14",
+         "source": "daily_trace", "source_id": "trace_20251114_002", "channel": "work"},
+    ),
+    make_example(
+        "When I want to understand a system quickly, I've learned to look for what happens "
+        "when the system receives bad input before I read the normal flow. Error handling reveals "
+        "the authors' assumptions better than any other part of the code.",
+        {"content_summary": "Rapid system understanding technique: read error handling before normal flow. Error paths reveal authorial assumptions more transparently than happy paths.",
+         "memory_tier": "procedural", "emotional_valence": "positive", "stated_intent": None,
+         "topic_cluster": "engineering / code reading / debugging", "timestamp": "2025-11-15",
+         "source": "daily_trace", "source_id": "trace_20251115_002", "channel": "work"},
+    ),
+]
+
+# ── Additional prospective examples (10, to reach 25 total) ──────────────────
+
+PROSPECTIVE_EXTRA = [
+    make_example(
+        "Set a hard deadline with myself: finish the API documentation by this Friday "
+        "or block Monday to do it. Putting it in the calendar now.",
+        {"content_summary": "Self-imposed deadline: complete API documentation by Friday, with Monday blocked as fallback. Added to calendar.",
+         "memory_tier": "prospective", "emotional_valence": "neutral",
+         "stated_intent": "Complete API documentation by Friday (or Monday at latest).",
+         "topic_cluster": "engineering / documentation / planning", "timestamp": "2025-11-01",
+         "source": "daily_trace", "source_id": "trace_20251101_003", "channel": "work"},
+    ),
+    make_example(
+        "Got an email from the conference organizers — I agreed to submit an abstract by November 15th. "
+        "It's on my calendar. The talk would be about the MLX pipeline work.",
+        {"content_summary": "Agreed to submit conference abstract by November 15th; confirmed via email and on calendar. Topic: MLX pipeline.",
+         "memory_tier": "prospective", "emotional_valence": "positive",
+         "stated_intent": "Submit conference abstract by November 15th.",
+         "topic_cluster": "engineering / conferences / writing", "timestamp": "2025-11-02",
+         "source": "daily_trace", "source_id": "trace_20251102_003", "channel": "work"},
+    ),
+    make_example(
+        "Committed to my therapist that I'd try the morning routine she suggested for two full weeks "
+        "starting Monday. Told her I'd report back at our next session.",
+        {"content_summary": "Commitment to therapist: try suggested morning routine for two weeks starting Monday; will report back at next session.",
+         "memory_tier": "prospective", "emotional_valence": "neutral",
+         "stated_intent": "Follow therapist's suggested morning routine for two weeks starting Monday.",
+         "topic_cluster": "health / mental health / habits", "timestamp": "2025-11-03",
+         "source": "daily_trace", "source_id": "trace_20251103_003", "channel": "personal"},
+    ),
+    make_example(
+        "Decided I'm finally going to finish the distributed systems course I started in March. "
+        "Going to block one hour every Tuesday and Thursday evening until it's done. "
+        "Lectures blocked on the calendar starting this week.",
+        {"content_summary": "Commitment to complete a distributed systems course; 1-hour blocks scheduled Tuesday and Thursday evenings, starting this week.",
+         "memory_tier": "prospective", "emotional_valence": "positive",
+         "stated_intent": "Complete distributed systems course by blocking 1 hour Tuesday and Thursday evenings.",
+         "topic_cluster": "learning / distributed systems / habits", "timestamp": "2025-11-04",
+         "source": "daily_trace", "source_id": "trace_20251104_003", "channel": "personal"},
+    ),
+    make_example(
+        "The team agreed today: we're moving the staging deploy to Thursdays instead of Fridays. "
+        "I'm responsible for updating the CI/CD config and the runbook. Targeting next week.",
+        {"content_summary": "Team decision: staging deploys move from Fridays to Thursdays. Responsible for updating CI/CD config and runbook, targeting next week.",
+         "memory_tier": "prospective", "emotional_valence": "neutral",
+         "stated_intent": "Update CI/CD config and runbook for Thursday staging deploys by next week.",
+         "topic_cluster": "engineering / CI/CD / process", "timestamp": "2025-11-05",
+         "source": "daily_trace", "source_id": "trace_20251105_003", "channel": "work"},
+    ),
+    make_example(
+        "Promised to write a post-mortem for the outage that happened last Tuesday. "
+        "It's overdue. Will have a draft to the team by end of day Wednesday.",
+        {"content_summary": "Overdue post-mortem for last Tuesday's outage; committed to delivering a draft to the team by end of day Wednesday.",
+         "memory_tier": "prospective", "emotional_valence": "neutral",
+         "stated_intent": "Deliver post-mortem draft for last Tuesday's outage by end of day Wednesday.",
+         "topic_cluster": "engineering / incidents / documentation", "timestamp": "2025-11-06",
+         "source": "daily_trace", "source_id": "trace_20251106_003", "channel": "work"},
+    ),
+    make_example(
+        "Going to do a digital detox weekend starting Friday evening — no news, no social, "
+        "no work Slack. Already told my partner and put my work status on DND.",
+        {"content_summary": "Planned digital detox weekend starting Friday evening: no news, social media, or work Slack. Partner informed, work status set to DND.",
+         "memory_tier": "prospective", "emotional_valence": "positive",
+         "stated_intent": "Digital detox weekend starting Friday evening: no news, social media, or work communication.",
+         "topic_cluster": "work-life balance / mental health / rest", "timestamp": "2025-11-07",
+         "source": "daily_trace", "source_id": "trace_20251107_003", "channel": "personal"},
+    ),
+    make_example(
+        "I need to have a direct conversation with Sam about the recurring lateness on deliverables. "
+        "It's affecting the whole team and I keep avoiding it. Will do it before the sprint review Thursday.",
+        {"content_summary": "Need to have a direct conversation with Sam about recurring delivery lateness; repeatedly avoided despite team impact. Self-committed to doing it before sprint review Thursday.",
+         "memory_tier": "prospective", "emotional_valence": "neutral",
+         "stated_intent": "Have a direct conversation with Sam about recurring delivery lateness before sprint review Thursday.",
+         "topic_cluster": "management / communication / accountability", "timestamp": "2025-11-08",
+         "source": "daily_trace", "source_id": "trace_20251108_003", "channel": "work"},
+    ),
+    make_example(
+        "Registered for the half marathon in March. Non-refundable. I'm actually doing this. "
+        "Training starts next Monday — found a 16-week plan that fits.",
+        {"content_summary": "Registered for a non-refundable March half marathon; 16-week training plan identified, starting next Monday.",
+         "memory_tier": "prospective", "emotional_valence": "positive",
+         "stated_intent": "Train for and complete March half marathon; 16-week plan starts next Monday.",
+         "topic_cluster": "health / exercise / goals", "timestamp": "2025-11-09",
+         "source": "daily_trace", "source_id": "trace_20251109_003", "channel": "personal"},
+    ),
+    make_example(
+        "Agreed with my co-author that we'll submit the paper draft to the workshop by December 1st. "
+        "She's handling the related work section, I'm doing the experiments. We're meeting weekly.",
+        {"content_summary": "Co-authored paper submission agreed for December 1st workshop deadline. Division: related work (co-author) and experiments (self). Weekly meetings in place.",
+         "memory_tier": "prospective", "emotional_valence": "neutral",
+         "stated_intent": "Submit paper draft to workshop by December 1st; responsible for experiments section.",
+         "topic_cluster": "research / writing / collaboration", "timestamp": "2025-11-10",
+         "source": "daily_trace", "source_id": "trace_20251110_003", "channel": "work"},
+    ),
+]
+
 # ── Assembly ──────────────────────────────────────────────────────────────────
 
-ALL_EXAMPLES = EPISODIC + SEMANTIC + PROCEDURAL + PROSPECTIVE
+ALL_EXAMPLES = EPISODIC + EPISODIC_EXTRA + SEMANTIC + PROCEDURAL + PROCEDURAL_EXTRA + PROSPECTIVE + PROSPECTIVE_EXTRA
 
 
 def main() -> None:
@@ -634,8 +954,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default="data/sample_sft_extended.jsonl",
-        help="Output JSONL path (default: data/sample_sft_extended.jsonl).",
+        default="data/sft_train_100.jsonl",
+        help="Output JSONL path (default: data/sft_train_100.jsonl).",
     )
     parser.add_argument(
         "--shuffle",
@@ -681,8 +1001,8 @@ def main() -> None:
         print(f"  {tier:<15} {tiers.get(tier, 0)}")
     print()
     print("Next steps:")
-    print(f"  python scripts/prepare_data.py --sft {args.output} --eval data/eval_gold.jsonl")
-    print("  make sft")
+    print(f"  python scripts/prepare_data.py --sft {args.output} --eval data/eval_gold.jsonl --seed 42")
+    print("  python scripts/train_sft.py --config configs/sft_trace_qwen25_3b_v2.yaml")
 
 
 if __name__ == "__main__":

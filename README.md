@@ -28,6 +28,37 @@ training and evaluation infrastructure for improving that.
 
 ---
 
+## Results
+
+> **Small gold eval / smoke eval** — 12 examples. Results are directional, not statistically robust.
+> See [`eval/results.md`](eval/results.md) for the full report including confusion matrices,
+> failure case analysis, and Trace-style integration examples.
+
+| Metric | Baseline (no adapter) | Fine-Tuned (SFT v2) |
+|--------|----------------------|---------------------|
+| Overall accuracy | 0/12 (0.0%) | **9/12 (75.0%)** |
+| episodic | 0/2 (0%) | 2/2 (100%) |
+| semantic | 0/3 (0%) | 3/3 (100%) |
+| procedural | 0/1 (0%) | 1/1 (100%) |
+| prospective | 0/6 (0%) | 3/6 (50%) |
+| aspiration-vs-commitment | 0/4 (0%) | 2/4 (50%) |
+| parse errors | 0 (wrong schema) | **0** |
+
+**Key finding:** The base model reliably outputs JSON but uses its own invented schema —
+fields like `"memoryRecord"`, `"memory_records"`, `"extractedStatements"` — never the Trace
+`memory_tier` field. Even a light SFT pass (100 examples, ~4 epochs) is sufficient to align
+the model to the Trace schema and achieve 75% tier classification accuracy. All remaining errors
+are hard prospective edge cases: weak-signal commitments, conditional commitments, and
+mixed episodic+prospective inputs.
+
+**Model:** `mlx-community/Qwen2.5-3B-Instruct-4bit` |
+**Adapter:** `outputs/sft_qwen25_3b_v2/` |
+**Training data:** [`data/sft_train_100.jsonl`](data/sft_train_100.jsonl) (100 examples, balanced 25/tier) |
+**Eval set:** [`data/eval_gold.jsonl`](data/eval_gold.jsonl) |
+**Full notes:** [`eval/notes.md`](eval/notes.md)
+
+---
+
 ## Hardware
 
 - MacBook Pro M4 / 64GB unified memory / 1TB storage
@@ -71,23 +102,29 @@ source .venv/bin/activate
 # 3. Verify everything is working
 make verify
 
-# 4. Validate and prepare the sample data
-make prepare-data
+# 4. Generate training data (no model required)
+make generate-data          # writes data/sft_train_100.jsonl  (100 examples, 25/tier)
 
-# 5. Run the extraction eval (gold-distribution inspection, no model required)
-python scripts/eval_extraction.py --eval-data data/eval_gold.jsonl --gold-only
+# 5. Prepare train/val splits
+make prepare-data           # writes data/processed/sft/{train,valid}.jsonl
 
-# 6. When you have a model downloaded, run SFT
-make sft
+# 6. Run SFT training (model auto-downloads ~2GB on first use)
+make sft                    # trains outputs/sft_qwen25_3b_v2/  (~4 min on M4)
 
-# 7. Eval the trained adapter
-make eval
+# 7. Run baseline vs fine-tuned eval
+make eval                   # writes eval/results.md + eval/results_raw.json
 ```
 
-To download a model (MLX-LM handles this automatically on first use):
+To download the model ahead of time:
 
 ```bash
 python -c "from mlx_lm import load; load('mlx-community/Qwen2.5-3B-Instruct-4bit')"
+```
+
+To verify the published results without retraining:
+
+```bash
+make validate-results       # checks all artifacts exist and paths are consistent
 ```
 
 ---
@@ -98,24 +135,34 @@ python -c "from mlx_lm import load; load('mlx-community/Qwen2.5-3B-Instruct-4bit
 iris-ft-lab/
 │
 ├── configs/
-│   ├── sft_trace_qwen25_3b.yaml    # SFT training config (LoRA, data, output paths)
-│   ├── dpo_trace_qwen25_3b.yaml    # DPO scaffold config
-│   └── model_registry.yaml        # All model paths live here — never in Python code
+│   ├── sft_trace_qwen25_3b_v2.yaml # ★ Canonical SFT config (v2 — published results)
+│   ├── sft_trace_qwen25_3b.yaml    #   Legacy v1 scaffold config (3-example, deprecated)
+│   ├── dpo_trace_qwen25_3b.yaml    #   DPO scaffold config (Stage 3)
+│   └── model_registry.yaml        #   All model paths live here — never in Python code
 │
 ├── data/
 │   ├── README.md                   # Schema documentation and data format reference
-│   ├── sample_sft.jsonl            # 3 synthetic SFT examples (chat format)
-│   ├── sample_dpo.jsonl            # 3 synthetic DPO preference pairs
-│   ├── eval_gold.jsonl             # 12 synthetic eval examples with gold labels
-│   ├── raw_private/                # Local workspace for real traces (gitignored)
-│   └── processed/                  # Train/val splits from prepare_data.py (gitignored)
+│   ├── sft_train_100.jsonl         # ★ Canonical training data (100 examples, 25/tier)
+│   ├── eval_gold.jsonl             # ★ 12 gold eval examples (small eval / smoke eval)
+│   ├── sample_sft.jsonl            #   3-example scaffold (legacy reference)
+│   ├── sample_dpo.jsonl            #   3-example DPO scaffold
+│   ├── raw_private/                #   Local workspace for real traces (gitignored)
+│   └── processed/                  #   Train/val splits — regenerate with make prepare-data
+│                                   #   (gitignored; .gitkeep preserves stub)
+│
+├── eval/                           # ★ Eval harness and results
+│   ├── run_eval.py                 #   Baseline vs fine-tuned comparison eval
+│   ├── results.md                  #   Published results report
+│   ├── results_raw.json            #   Raw per-example inference results (JSON)
+│   └── notes.md                   #   Training command, hyperparameters, loss log
 │
 ├── scripts/
 │   ├── setup_verify.py             # Verify Python, MLX, MLX-LM, Metal
+│   ├── generate_synthetic_sft.py   # Generate sft_train_100.jsonl (no model needed)
 │   ├── prepare_data.py             # Validate + split JSONL data
 │   ├── train_sft.py                # SFT training wrapper (reads YAML only)
 │   ├── train_dpo.py                # DPO scaffold (honest about current availability)
-│   ├── eval_extraction.py          # Extraction eval: tier, intent, aspiration/commitment
+│   ├── eval_extraction.py          # Legacy extraction eval (used by eval-v1 target)
 │   ├── eval_tracking.py            # Intention-reality gap characterization eval
 │   └── run_trace_style_inference.py # Pipe-friendly inference entrypoint
 │
@@ -131,8 +178,10 @@ iris-ft-lab/
 ├── outputs/                        # Adapter weights after training (gitignored)
 ├── pyproject.toml
 ├── setup.sh
-└── Makefile
+└── Makefile                        # make help for all targets
 ```
+
+Items marked ★ are the canonical v2 artifacts that produced the published results.
 
 ---
 
@@ -145,16 +194,16 @@ To switch to the smoke-test model for faster iteration:
 
 ```bash
 python scripts/train_sft.py \
-    --config configs/sft_trace_qwen25_3b.yaml \
+    --config configs/sft_trace_qwen25_3b_v2.yaml \
     --model mlx-community/Qwen3-1.7B-4bit
 ```
 
-To make it the default, edit `model.path` in `configs/sft_trace_qwen25_3b.yaml`.
+To make it the default, edit `model.path` in `configs/sft_trace_qwen25_3b_v2.yaml`.
 
 To upgrade to the 7B model after pipeline validation:
 
 ```yaml
-# configs/sft_trace_qwen25_3b.yaml
+# configs/sft_trace_qwen25_3b_v2.yaml
 model:
   path: "mlx-community/Qwen2.5-7B-Instruct-4bit"
 ```
@@ -234,9 +283,9 @@ If you accidentally stage real traces: `git reset HEAD <file>` before committing
    at runtime and exits honestly if it's not yet supported. Check the mlx-lm changelog
    before Stage 3 work.
 
-2. **3 SFT examples are conceptual starters.** Real training requires at minimum ~50–200
-   examples per tier to produce meaningful extraction quality. Generate from real traces
-   in `data/raw_private/`.
+2. **`data/sft_train_100.jsonl` is synthetic.** The 100 training examples are template-based
+   and do not cover the full range of real trace inputs. To improve quality further, generate
+   examples from real traces in `data/raw_private/` and add them to the training set.
 
 3. **Extraction eval depends on structured JSON output.** If the base model (without an
    adapter) doesn't reliably produce well-formed JSON, `eval_extraction.py` will show low
@@ -258,18 +307,18 @@ If you accidentally stage real traces: `git reset HEAD <file>` before committing
 - [ ] Run `make prepare-data` — validate sample data, inspect splits in `data/processed/`
 - [ ] Open `notebooks/01_data_exploration.ipynb` — explore tier distribution and example structure
 - [ ] Run a smoke-test SFT pass with Qwen3-1.7B:
-      `python scripts/train_sft.py --config configs/sft_trace_qwen25_3b.yaml --model mlx-community/Qwen3-1.7B-4bit --dry-run`
+      `python scripts/train_sft.py --config configs/sft_trace_qwen25_3b_v2.yaml --model mlx-community/Qwen3-1.7B-4bit --dry-run`
 - [ ] Run inference on a raw trace:
-      `echo "Finished debugging the race condition." | python scripts/run_trace_style_inference.py --config configs/sft_trace_qwen25_3b.yaml`
+      `echo "Finished debugging the race condition." | python scripts/run_trace_style_inference.py --config configs/sft_trace_qwen25_3b_v2.yaml`
 
 ### Stage 2 — Extraction quality
 *Adapter training, eval loop, structured extraction*
 
-- [ ] Generate 50–200 real SFT examples from your traces in `data/raw_private/`
-- [ ] Run full SFT on Qwen2.5-3B-Instruct: `make sft`
-- [ ] Run extraction eval: `make eval` — inspect tier accuracy and intent hit rate
+- [ ] Run `make generate-data && make prepare-data` — build the 100-example training set
+- [ ] Run full SFT on Qwen2.5-3B-Instruct: `make sft` — saves adapter to `outputs/sft_qwen25_3b_v2/`
+- [ ] Run extraction eval: `make eval` — writes `eval/results.md` with baseline vs fine-tuned comparison
 - [ ] Open `notebooks/02_lora_walkthrough.ipynb` — understand the LoRA settings
-- [ ] Iterate: adjust rank, target_modules, and epochs based on eval results
+- [ ] Iterate on real data: add real traces from `data/raw_private/` to the training set for better coverage
 - [ ] Upgrade to Qwen2.5-7B if 3B quality plateaus on aspiration-vs-commitment cases
 
 ### Stage 3 — Policy shaping
