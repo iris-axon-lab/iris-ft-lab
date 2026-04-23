@@ -29,8 +29,8 @@ from collab_eval.graders import deterministic as det
 
 def test_verbosity_padding_is_penalized():
     """
-    A naive word-count grader that only checks 'within limit' will fail
-    if the limit is not tight. This case shows an agent that pads a correct
+    A naive word-count grader that only checks 'within limit' will fail to catch
+    padding if the limit is not tight enough. This case shows an agent that pads a correct
     revision with filler sentences to appear thorough.
 
     The composite harness penalizes this via:

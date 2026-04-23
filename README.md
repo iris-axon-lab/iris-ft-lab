@@ -360,3 +360,9 @@ run_trace_style_inference.py  ← pipe-friendly inference; JSON to stdout
        ▼
    Trace Layer 2
 ```
+
+---
+
+## See also
+
+- [trace](https://github.com/iris-axon-lab/trace) — a local-first longitudinal agent built on the same memory architecture principles.

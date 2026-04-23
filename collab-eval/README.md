@@ -6,6 +6,9 @@ oracle, so naive reward functions get gamed. This harness addresses that with de
 rewards, deterministic checks where the ground truth is recoverable, LLM judges only
 where judgment is genuinely required, and hard-fail caps that prevent catastrophic
 outputs from hiding behind good scores on cheap dimensions.
+The failure modes in this harness reflect the class of grader failures that surface
+repeatedly in multi-step production systems — the design is grounded in what breaks
+in practice, not just what is theoretically gameable.
 
 All tasks, documents, and failure cases are fully synthetic.
 

@@ -214,6 +214,9 @@ weaknesses rather than improving actual task performance.
   a harder environment to reward correctly and is not addressed here.
 - **Inter-rater reliability.** The LLM judge's rubrics have not been calibrated against
   human raters. Calibration is essential before using the harness for RL training.
+  This is especially hard for document quality because rater disagreement is asymmetric:
+  raters converge reliably on bad outputs but diverge significantly on what "good" looks
+  like, which means a calibration set requires oversampling the high-quality range.
 - **Grader adversarial robustness.** The deterministic heuristics are cheap to game
   by a sufficiently capable agent that specifically targets them. The harness is designed
   to be harder to game than a single holistic score, not impossible to game.
