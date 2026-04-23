@@ -1,0 +1,6 @@
+# Runtime dependencies for collab_eval.
+# anthropic is optional — only required for LLM-based grading.
+# The harness runs fully offline in deterministic-only mode without it.
+anthropic
+pandas
+pytest
