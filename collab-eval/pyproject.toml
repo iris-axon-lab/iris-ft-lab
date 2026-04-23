@@ -1,0 +1,8 @@
+[project]
+name = "collab-eval"
+version = "0.1.0"
+description = "Task environment and grader harness for virtual-collaborator RL scenarios"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

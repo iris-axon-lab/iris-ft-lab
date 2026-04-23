@@ -1,0 +1,22 @@
+Evaluating Agentic Systems: Open Problems
+
+Evaluating agentic AI systems presents fundamentally different challenges than evaluating
+static language models. Agentic systems take sequences of actions, interact with external
+tools, and produce outcomes that unfold over time. This means that performance cannot be
+captured by scoring a single output against a gold label.
+
+One key challenge is that reward signals for agentic tasks are often sparse and delayed.
+An agent may complete 90% of a multi-step task correctly but fail at the final step, and
+a naive scorer that measures only final-state success will fail to distinguish a near-miss
+from a complete failure. Intermediate reward shaping is therefore essential for training
+stable policies.
+
+A second challenge is that agents operating in document-manipulation tasks tend to overfit
+to surface-level formatting cues rather than semantic correctness. Empirical studies have
+shown that models fine-tuned on document tasks consistently score higher on format-compliance
+metrics than on factual faithfulness metrics, even when format compliance is not the
+intended objective.
+
+Addressing these challenges requires evaluation frameworks that decompose reward across
+multiple dimensions and apply deterministic checks wherever the ground truth is recoverable,
+reserving model-based judgment for dimensions where no algorithmic check is feasible.

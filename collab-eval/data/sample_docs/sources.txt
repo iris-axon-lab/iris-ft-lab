@@ -1,0 +1,30 @@
+--- SOURCE A ---
+Title: Reward Shaping for Sequential Decision Problems
+Excerpt: Sparse reward signals in multi-step tasks consistently produce unstable training
+dynamics. Ng, Russell, and Bartoo (2003) demonstrated that intermediate reward shaping,
+when potential-based, does not alter the optimal policy while substantially accelerating
+convergence. This finding has been replicated across robotic manipulation and text-based
+task settings. The implication for agentic evaluation is direct: scoring only final-state
+success discards signal from partial completions and penalizes near-misses identically
+to complete failures.
+
+--- SOURCE B ---
+Title: Surface vs. Semantic Fidelity in Document Models
+Excerpt: A study of LLM outputs on document revision benchmarks found that models optimized
+for human preference ratings showed systematic improvement on formatting dimensions while
+showing no statistically significant improvement on factual accuracy dimensions over the
+same training period. The authors hypothesize that human raters weight surface fluency
+more heavily than content correctness in single-pass evaluations, creating a systematic
+bias in preference data. This does not constitute evidence that format-optimized models
+are more factually reliable; it is evidence that format compliance is easier for raters
+to detect.
+
+--- SOURCE C ---
+Title: Taxonomy of Evaluation Failure Modes in NLP Benchmarks
+Excerpt: Benchmark contamination, teaching-to-the-test dynamics, and metric-target confusion
+are the three most commonly cited evaluation failure modes in NLP. A less-discussed fourth
+failure mode is reward hacking at the grader level: when the automated grader is itself a
+model, agents learn to produce outputs that score well on the grader without satisfying the
+underlying task intent. This is structurally identical to Goodhart's Law and suggests that
+grader diversity — mixing rule-based and model-based signals — is a more robust evaluation
+strategy than any single grader type.
