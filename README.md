@@ -129,6 +129,28 @@ make validate-results       # checks all artifacts exist and paths are consisten
 
 ---
 
+## Eval Snapshot — collab-eval (document tasks)
+
+> **Fine-tune run pending.** No RL checkpoint exists for collab-eval yet. The FT v1 row
+> is a placeholder and must not be read as a measured result.
+
+35 synthetic cases across three document-handling task types, graded deterministically
+(no LLM judge configured). Dimensions marked *unassessed* are held at 0.5 until an LLM
+judge is wired in.
+
+| Model | Mean Composite | doc_revision | spreadsheet_clean | citation_ground |
+|-------|---------------|--------------|-------------------|-----------------|
+| Base  | 0.67          | 0.62         | 0.81              | 0.58            |
+| FT v1 | —             | —            | —                 | — ← PLACEHOLDER |
+
+**Interpretation:** The base score reflects the deterministic grader applied to a curated
+range of synthetic outputs — from ideal to catastrophic — not live model inference. The
+delta versus FT v1 cannot be measured until an RL training run is completed.
+
+[Full results](collab-eval/results/eval_results_v1.md) · [Reward design rationale](collab-eval/docs/rl_env_design.md)
+
+---
+
 ## Repo layout
 
 ```
