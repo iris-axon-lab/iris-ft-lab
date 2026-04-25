@@ -48,6 +48,10 @@ evaluation and environment harness — no training loop.
 The design note at [`docs/rl_env_design.md`](docs/rl_env_design.md) covers reward
 decomposition strategy, failure modes, and extension paths to a fuller RL setup.
 
+A longer builder's log — covering design decisions, failure modes encountered during
+construction, and the reward-hacking probes — is published at
+[iris-axon-lab.github.io](https://iris-axon-lab.github.io).
+
 ---
 
 ## Setup
@@ -91,6 +95,64 @@ pytest collab-eval/tests/ -v
 
 Tests pass offline without Anthropic credentials. The adversarial cases are executable
 demonstrations of reward hacking failure modes, not just smoke tests.
+
+---
+
+## Validate from scratch
+
+Full end-to-end reproduction from a clean clone. No API key required for any step below.
+
+**1. Clone and install**
+
+```bash
+git clone <repo-url>
+cd iris-ft-lab/collab-eval
+pip install -r requirements.txt
+```
+
+**2. Run the test suite (40 tests, ~1 s)**
+
+```bash
+pytest tests/ -v
+```
+
+Expected: `40 passed`. The suite covers three test files:
+- `test_reward_hacking_cases.py` — original 4 adversarial probes (the canonical set)
+- `test_eval_extended.py` — 35 extended cases: quality-range checks and 9 additional RH probes
+
+**3. Run the demo**
+
+```bash
+python scripts/run_demo.py
+```
+
+Prints two episodes per task type (good agent / reward-hacking agent). All output is
+deterministic — no model inference, no API calls. Each bad-agent episode demonstrates
+a specific grader failure mode described in the "What this demonstrates" section above.
+
+**4. Re-run the scorer and inspect results**
+
+```bash
+python scripts/score_eval.py
+```
+
+Writes (or overwrites) `results/eval_results_v1.md` with per-case composite scores
+and dimension breakdowns. The FT v1 row in that file is an explicit placeholder — no RL
+checkpoint exists; a training run is required before it can be populated.
+
+```bash
+# Quick sanity check — should show mean composite ~0.67:
+head -40 results/eval_results_v1.md
+```
+
+**5. Read the design rationale**
+
+```bash
+open docs/rl_env_design.md   # or: cat docs/rl_env_design.md
+```
+
+Covers reward decomposition strategy, known grader limitations, and extension paths
+toward a full RL training loop.
 
 ---
 
