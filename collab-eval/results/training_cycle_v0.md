@@ -120,3 +120,9 @@ See `results/optimization_loop_v0.md` for the full Go/No-go section.
 ---
 
 *Training cycle v0 complete. STOP.*
+
+---
+
+**→ Next stage:** Model baseline and SFT scaffold.
+See [`results/model_baseline_v0.md`](model_baseline_v0.md) for baseline run status
+and [`results/collab_sft_v0.md`](collab_sft_v0.md) for SFT scaffold status.

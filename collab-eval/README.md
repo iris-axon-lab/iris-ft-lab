@@ -226,6 +226,171 @@ or contains zero citation markers is capped at ≤ 0.3 regardless of other dimen
 
 ---
 
+## Model Baseline and SFT Scaffold
+
+This section is a reproducibility document. It distinguishes four things that must not
+be confused: the heuristic optimization loop, the base-model inference baseline,
+the SFT scaffold infrastructure, and actual SFT results.
+
+---
+
+### 1. Heuristic optimization loop v0
+
+**What it is:** A four-policy comparison (`naive`, `format_compliance`, `reward_aware`,
+`overfit`) run against 80 synthetically generated spreadsheet-cleaning tasks. All policies
+are fixed heuristic rules — no model is trained. The purpose was to establish a grader
+baseline and expose concrete reward-hacking failure modes under optimization pressure.
+
+**What it demonstrated:** The harness floor is already high (naive achieves 0.9345 composite
+with minimal effort). The `reward_aware` policy reaches 1.0 by selecting templates using
+grader access at inference time. The `overfit` policy exposes two exploitable grader
+weaknesses: row duplication and unit-hiding in Notes free text.
+
+**Where results live:**
+- [`results/optimization_loop_v0.md`](results/optimization_loop_v0.md) — policy comparison
+- [`results/training_cycle_v0.md`](results/training_cycle_v0.md) — end-to-end cycle summary
+
+---
+
+### 2. Model baseline
+
+**What it tests:** Whether the default base model (`mlx-community/Qwen2.5-3B-Instruct-4bit`)
+can perform spreadsheet-cleaning tasks at a level that justifies SFT training. Scored with
+the existing deterministic composite grader only — no LLM judge, no new grader.
+
+**How to run:**
+
+```bash
+# Generate held-out split (seed 200, n=80)
+python scripts/generate_tasks.py \
+    --task spreadsheet_clean --n 80 --seed 200 \
+    --output data/generated/spreadsheet_heldout_v1.jsonl
+
+# Smoke test (20 cases, default)
+python scripts/run_model_baseline.py
+
+# Full run
+python scripts/run_model_baseline.py --limit 0
+
+# Dry run (print config only)
+python scripts/run_model_baseline.py --dry-run
+```
+
+**Where results live:** [`results/model_baseline_v0.md`](results/model_baseline_v0.md)
+
+**Baseline decision gate:**
+
+Proceed to actual SFT training only if **both** are true:
+- composite mean **>= 0.30**
+- hard-fail rate **<= 40%**
+
+This is a provisional engineering gate, not a statistical claim. If either condition
+fails: document the result; do NOT train; the SFT scaffold may still be committed
+as infrastructure; the README must state that training is not yet justified.
+
+**Baseline result (training_cycle_v0):**
+
+- model: `mlx-community/Qwen2.5-3B-Instruct-4bit`
+- cases evaluated: 80
+- parseability: 100.0%
+- mean composite: **0.9569**
+- hard-fail rate: 0.0%
+- **gate: PASS** — baseline criteria met; SFT training is justified
+
+See [`results/model_baseline_v0.md`](results/model_baseline_v0.md) for full per-dimension breakdown.
+
+---
+
+### 3. SFT scaffold
+
+**What it adds:** Infrastructure for SFT training — train/held-out data splits,
+SFT record builder, training config, and a training script with `--dry-run` /
+`--check-only` modes. No training has been run.
+
+**How to build SFT data:**
+
+```bash
+# Generate training split (seed 100, n=240)
+python scripts/generate_tasks.py \
+    --task spreadsheet_clean --n 240 --seed 100 \
+    --output data/generated/spreadsheet_train_v1.jsonl
+
+# Build SFT records (gold outputs from generator, no model calls)
+# Writes to data/sft_collab_eval_full/train.jsonl (MLX-LM directory format)
+python scripts/build_sft_data.py
+
+# The committed sample (20 records, seed 999) is at:
+# data/sft_collab_eval_sample.jsonl
+```
+
+**How to verify setup / dry-run / train:**
+
+```bash
+# Verify config, data path, and mlx_lm availability
+python scripts/train_collab_sft.py --check-only
+
+# Print exact MLX-LM training command without training
+python scripts/train_collab_sft.py --dry-run
+
+# Run actual training (requires mlx-lm installed and train.jsonl built)
+python scripts/train_collab_sft.py --train
+```
+
+The `--dry-run` command prints:
+```
+mlx_lm.lora --config configs/sft_collab_eval_qwen25_3b.yaml
+```
+
+**Promotion gate (also in `scripts/train_collab_sft.py` and `results/collab_sft_v0.md`):**
+
+Promote the SFT adapter only if **all** are true:
+- composite improves by **>= 0.10** over base model
+- hard-fail rate does **not increase**
+- format_validity does **not regress**
+- no obvious increase in reward-hacking behavior
+
+**Important note on the +0.10 gate:** The base-model baseline already reached composite
+0.9569. Since composite is capped at 1.0, the maximum possible improvement is ~0.043 —
+the original +0.10 gate is mathematically unreachable. The gate is preserved here as
+documented; it should be reviewed and revised before running actual training.
+
+To run the comparison eval after training:
+
+```bash
+python eval/run_collab_model_eval.py \
+    --model-base mlx-community/Qwen2.5-3B-Instruct-4bit \
+    --adapter adapters/sft_collab_eval_qwen25_3b/ \
+    --tasks data/generated/spreadsheet_heldout_v1.jsonl
+```
+
+---
+
+### 4. Actual SFT results
+
+**SFT v0 was run. The adapter is not promoted.**
+
+Initial SFT v0 was run after the base-model baseline passed the provisional training gate.
+The adapter is not promoted. It improved `unit_consistency` from 0.8625 to 1.0000, but reduced
+mean composite from 0.9569 to 0.9110 and `data_preservation` from 0.9750 to 0.7500.
+RH-like cases increased from 2 to 20, consistent with clean-looking outputs that drop rows or
+values. This suggests the first SFT recipe over-optimized unit normalization while damaging
+preservation behavior.
+
+**Note on the promotion gate:** The base composite was already 0.9569. Since composite is capped
+at 1.0, the maximum possible improvement is ~0.043. The original +0.10 composite promotion gate
+is mathematically unreachable given the base score. The gate must be revised before the next
+training attempt.
+
+**Next work is dataset hardening, not DPO.** Inspect the RH-like failures, generate larger and
+harder synthetic cases emphasizing row/value preservation, add a validation split, and rerun a
+gentler SFT recipe. DPO should be considered only after SFT no longer regresses preservation or
+increases RH-like behavior.
+
+See [`results/collab_sft_v0.md`](results/collab_sft_v0.md) for full metrics and
+[`docs/sft_v0_builder_notes.md`](docs/sft_v0_builder_notes.md) for interpretation and next steps.
+
+---
+
 ## Repo layout
 
 ```
@@ -245,24 +410,38 @@ collab-eval/
       spreadsheet_generator.py  # Synthetic task generator (training cycle v0)
     policies/
       baselines.py       # Four heuristic policies for optimization loop
+    inference/
+      mlx_runner.py      # MLX-LM wrapper; degrades gracefully if unavailable
   tests/
     test_reward_hacking_cases.py  # Adversarial demonstrations (original 4)
     test_eval_extended.py         # Extended quality-range + RH probe cases (35)
     test_generation.py            # Generated task schema and coverage tests
     test_calibration.py           # Calibration record schema and sanity tests
     test_optimization_loop.py     # Policy outputs and overfit hacking tests
+    test_split_validation.py      # Train/held-out overlap and gradeability checks
+    test_sft_data.py              # SFT record schema and gold determinism tests
+    test_baseline_runner.py       # Baseline runner graceful skip; train scaffold checks
   scripts/
     run_demo.py
-    generate_tasks.py             # Generate synthetic task cases
+    generate_tasks.py             # Generate synthetic task cases (with validation)
     run_judge_calibration.py      # Validate calibration set (offline + LLM)
+    run_model_baseline.py         # Base-model inference baseline (MLX-LM)
+    build_sft_data.py             # Build SFT records from generated cases (no model)
+    train_collab_sft.py           # SFT training scaffold (--dry-run / --check-only)
     run_optimization_loop.py      # Four-policy optimization loop runner
   docs/
     rl_env_design.md              # Design note: reward decomposition, extensions
     generated_task_schema.md      # Schema for generated task JSONL records
+    sft_data_schema.md            # Schema for SFT training records
+  configs/
+    sft_collab_eval_qwen25_3b.yaml  # MLX-LM LoRA config (Qwen2.5-3B)
+  eval/
+    run_collab_model_eval.py      # Base vs. SFT comparison; promotion gate check
   data/
     sample_docs/                  # Synthetic input documents (hardcoded tasks)
-    generated/                    # Generated task JSONL (created by generate_tasks.py)
+    generated/                    # Generated task JSONL (gitignored, reproducible)
     judge_calibration/            # Seed calibration set for LLM judge
+    sft_collab_eval_sample.jsonl  # Committed SFT sample (20 records, seed 999)
   results/
     eval_results_v1.md            # Original 35-case grader results (preserved)
     training_cycle_v0_audit.md    # Phase 0 audit
@@ -270,4 +449,6 @@ collab-eval/
     optimization_loop_v0_raw.jsonl  # Per-case raw results
     optimization_loop_v0.md       # Four-policy comparison report
     training_cycle_v0.md          # End-to-end training cycle summary
+    model_baseline_v0.md          # Base-model baseline (run status + metrics if run)
+    collab_sft_v0.md              # SFT scaffold status (results if training has run)
 ```

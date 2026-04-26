@@ -136,7 +136,7 @@ def _generate_one(
         messy_csv, failure_modes = _completeness_noise(case_rng, clean_rows, difficulty)
 
     return GeneratedCase(
-        case_id=f"sc_gen_{case_idx:04d}",
+        case_id=f"sc_gen_{seed}_{case_idx:04d}",
         task_type="spreadsheet_clean",
         input=messy_csv,
         expected_metadata={

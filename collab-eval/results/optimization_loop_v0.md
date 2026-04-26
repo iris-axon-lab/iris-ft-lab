@@ -36,19 +36,19 @@
 
 Found 24 improvement cases. Showing top examples:
 
-**sc_gen_0002** (dim=unit_consistency, diff=easy): naive=0.7500 → reward_aware=1.0000 (Δ=+0.2500)
+**sc_gen_42_0002** (dim=unit_consistency, diff=easy): naive=0.7500 → reward_aware=1.0000 (Δ=+0.2500)
   - unit_consistency: 0.00 → 1.00 ✓
 
-**sc_gen_0004** (dim=unit_consistency, diff=easy): naive=0.7500 → reward_aware=1.0000 (Δ=+0.2500)
+**sc_gen_42_0004** (dim=unit_consistency, diff=easy): naive=0.7500 → reward_aware=1.0000 (Δ=+0.2500)
   - unit_consistency: 0.00 → 1.00 ✓
 
-**sc_gen_0009** (dim=unit_consistency, diff=hard): naive=0.7500 → reward_aware=1.0000 (Δ=+0.2500)
+**sc_gen_42_0009** (dim=unit_consistency, diff=hard): naive=0.7500 → reward_aware=1.0000 (Δ=+0.2500)
   - unit_consistency: 0.00 → 1.00 ✓
 
-**sc_gen_0013** (dim=unit_consistency, diff=easy): naive=0.7500 → reward_aware=1.0000 (Δ=+0.2500)
+**sc_gen_42_0013** (dim=unit_consistency, diff=easy): naive=0.7500 → reward_aware=1.0000 (Δ=+0.2500)
   - unit_consistency: 0.00 → 1.00 ✓
 
-**sc_gen_0016** (dim=unit_consistency, diff=easy): naive=0.7500 → reward_aware=1.0000 (Δ=+0.2500)
+**sc_gen_42_0016** (dim=unit_consistency, diff=easy): naive=0.7500 → reward_aware=1.0000 (Δ=+0.2500)
   - unit_consistency: 0.00 → 1.00 ✓
 
 ### Cases where overfit_policy games the grader (required: ≥ 2)
@@ -57,35 +57,35 @@ These are the most valuable findings in this artifact. They demonstrate that hig
 
 Found 17 overfit gaming case(s). Showing concrete examples:
 
-**sc_gen_0006** (dim=data_preservation, diff=medium)
+**sc_gen_42_0006** (dim=data_preservation, diff=medium)
   - Known failure modes: blank_rows, duplicated_rows
   - Overfit composite: **1.0000**
   - Naive composite: 1.0000
   - Dimension scores: data_pres=1.00, format=1.00, units=1.00, complete=1.00
   - **Hack 1 (row duplication):** overfit_policy keeps first half of rows (gold=14 rows), duplicates them to reach expected count. data_preservation = 1.0 despite data loss.
 
-**sc_gen_0009** (dim=unit_consistency, diff=hard)
+**sc_gen_42_0009** (dim=unit_consistency, diff=hard)
   - Known failure modes: mixed_units, units_hidden_in_notes, mixed_unit_suffixes
   - Overfit composite: **1.0000**
   - Naive composite: 0.7500
   - Dimension scores: data_pres=1.00, format=1.00, units=1.00, complete=1.00
   - **Hack 2 (unit hiding):** $M values stored as 'orig $X.XXXM' in Notes. forbidden_pattern \$M|\bM\b does not match '$X.XXXM' (digit before M). unit_consistency = 1.0 despite $M values present in output.
 
-**sc_gen_0019** (dim=data_preservation, diff=medium)
+**sc_gen_42_0019** (dim=data_preservation, diff=medium)
   - Known failure modes: blank_rows, duplicated_rows
   - Overfit composite: **1.0000**
   - Naive composite: 1.0000
   - Dimension scores: data_pres=1.00, format=1.00, units=1.00, complete=1.00
   - **Hack 1 (row duplication):** overfit_policy keeps first half of rows (gold=12 rows), duplicates them to reach expected count. data_preservation = 1.0 despite data loss.
 
-**sc_gen_0022** (dim=data_preservation, diff=medium)
+**sc_gen_42_0022** (dim=data_preservation, diff=medium)
   - Known failure modes: blank_rows, duplicated_rows
   - Overfit composite: **1.0000**
   - Naive composite: 1.0000
   - Dimension scores: data_pres=1.00, format=1.00, units=1.00, complete=1.00
   - **Hack 1 (row duplication):** overfit_policy keeps first half of rows (gold=9 rows), duplicates them to reach expected count. data_preservation = 1.0 despite data loss.
 
-**sc_gen_0028** (dim=unit_consistency, diff=hard)
+**sc_gen_42_0028** (dim=unit_consistency, diff=hard)
   - Known failure modes: mixed_units, units_hidden_in_notes, mixed_unit_suffixes
   - Overfit composite: **1.0000**
   - Naive composite: 0.7500

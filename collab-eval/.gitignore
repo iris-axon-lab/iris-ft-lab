@@ -5,3 +5,14 @@ __pycache__/
 
 # Generated task files — reproducible from generate_tasks.py, not committed
 data/generated/*.jsonl
+
+# Raw inference results — regenerate from scripts
+results/*_raw.jsonl
+
+# Full SFT training data — regenerate with build_sft_data.py
+data/sft_collab_eval_full*.jsonl
+data/sft_collab_eval_full/
+
+# MLX adapter outputs — not committed
+adapters/
+*.npz
