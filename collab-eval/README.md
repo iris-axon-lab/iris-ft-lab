@@ -42,8 +42,18 @@ failure modes executable and runnable as regression tests.
 ## What this is
 
 `collab-eval` provides three runnable task environments, deterministic graders for each,
-an optional LLM-as-judge layer, and a composite grader with hard-fail caps. It is an
-evaluation and environment harness — no training loop.
+an optional LLM-as-judge layer, a composite grader with hard-fail caps — and as of
+training cycle v0, a minimal measured training-cycle artifact:
+
+- **Synthetic task generation** for spreadsheet cleanup (80 seeded cases, deterministic)
+- **Seed judge/rubric calibration harness** (24 synthetic examples, 4 LLM-required dimensions)
+- **One measured optimization loop** (four policies compared on generated tasks)
+- **Reward-hacking analysis** (three concrete hacking examples found under optimization pressure)
+
+This is NOT an RL implementation. No model is trained. The loop is policy-search over
+fixed heuristics, chosen to expose grader weaknesses and establish a credible baseline.
+See [`results/training_cycle_v0.md`](results/training_cycle_v0.md) for what was and
+was not implemented.
 
 The design note at [`docs/rl_env_design.md`](docs/rl_env_design.md) covers reward
 decomposition strategy, failure modes, and extension paths to a fuller RL setup.
@@ -110,15 +120,18 @@ cd iris-ft-lab/collab-eval
 pip install -r requirements.txt
 ```
 
-**2. Run the test suite (40 tests, ~1 s)**
+**2. Run the test suite (96 tests, ~0.2 s)**
 
 ```bash
 pytest tests/ -v
 ```
 
-Expected: `40 passed`. The suite covers three test files:
+Expected: `96 passed`. The suite covers five test files:
 - `test_reward_hacking_cases.py` — original 4 adversarial probes (the canonical set)
 - `test_eval_extended.py` — 35 extended cases: quality-range checks and 9 additional RH probes
+- `test_generation.py` — generated task schema, determinism, coverage, gradeability
+- `test_calibration.py` — calibration record schema, band/score sanity, dimension coverage
+- `test_optimization_loop.py` — policy outputs, overfit hacking probes, reward_aware improvement
 
 **3. Run the demo**
 
@@ -145,14 +158,34 @@ checkpoint exists; a training run is required before it can be populated.
 head -40 results/eval_results_v1.md
 ```
 
-**5. Read the design rationale**
+**5. Run the training cycle (task generation → calibration → optimization loop)**
+
+```bash
+# Generate 80 synthetic spreadsheet tasks
+python scripts/generate_tasks.py \
+    --task spreadsheet_clean --n 80 --seed 42 \
+    --output data/generated/spreadsheet_clean_v1.jsonl
+
+# Run calibration harness (offline safe; LLM scoring optional)
+python scripts/run_judge_calibration.py
+# With LLM judge: ANTHROPIC_API_KEY=sk-... python scripts/run_judge_calibration.py
+
+# Run the four-policy optimization loop
+python scripts/run_optimization_loop.py \
+    --tasks data/generated/spreadsheet_clean_v1.jsonl
+
+# Read results
+cat results/optimization_loop_v0.md
+```
+
+**6. Read the design rationale**
 
 ```bash
 open docs/rl_env_design.md   # or: cat docs/rl_env_design.md
 ```
 
-Covers reward decomposition strategy, known grader limitations, and extension paths
-toward a full RL training loop.
+Covers reward decomposition strategy, known grader limitations, extension paths
+toward a full RL training loop, and training cycle v0 additions.
 
 ---
 
@@ -208,11 +241,33 @@ collab-eval/
       deterministic.py   # Rule-based checks with Design note: comments
       llm_judge.py       # Optional Anthropic SDK grader (per-dimension)
       composite.py       # Weighted scoring + hard-fail caps
+    generation/
+      spreadsheet_generator.py  # Synthetic task generator (training cycle v0)
+    policies/
+      baselines.py       # Four heuristic policies for optimization loop
   tests/
-    test_reward_hacking_cases.py  # Adversarial demonstrations
+    test_reward_hacking_cases.py  # Adversarial demonstrations (original 4)
+    test_eval_extended.py         # Extended quality-range + RH probe cases (35)
+    test_generation.py            # Generated task schema and coverage tests
+    test_calibration.py           # Calibration record schema and sanity tests
+    test_optimization_loop.py     # Policy outputs and overfit hacking tests
   scripts/
     run_demo.py
+    generate_tasks.py             # Generate synthetic task cases
+    run_judge_calibration.py      # Validate calibration set (offline + LLM)
+    run_optimization_loop.py      # Four-policy optimization loop runner
   docs/
-    rl_env_design.md     # Design note: reward decomposition, failure modes, extensions
-  data/sample_docs/      # Synthetic input documents
+    rl_env_design.md              # Design note: reward decomposition, extensions
+    generated_task_schema.md      # Schema for generated task JSONL records
+  data/
+    sample_docs/                  # Synthetic input documents (hardcoded tasks)
+    generated/                    # Generated task JSONL (created by generate_tasks.py)
+    judge_calibration/            # Seed calibration set for LLM judge
+  results/
+    eval_results_v1.md            # Original 35-case grader results (preserved)
+    training_cycle_v0_audit.md    # Phase 0 audit
+    judge_calibration_v1.md       # Calibration run report
+    optimization_loop_v0_raw.jsonl  # Per-case raw results
+    optimization_loop_v0.md       # Four-policy comparison report
+    training_cycle_v0.md          # End-to-end training cycle summary
 ```

@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+
+# Generated task files — reproducible from generate_tasks.py, not committed
+data/generated/*.jsonl
