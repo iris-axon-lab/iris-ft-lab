@@ -95,15 +95,36 @@ For the new generator, use the full SFT system prompt (more complete) for consis
 
 ---
 
-## 5. Phase 1.3 hard stop — DPO not available in installed mlx-lm
+## 5. Phase 1.3 blocker — RESOLVED via mlx-lm-lora v2.1.0
 
-**mlx-lm version:** 0.31.3  
-**DPO status:** NOT AVAILABLE
+**Resolution date:** 2026-04-27
 
-Neither `mlx_lm.tuner.dpo_trainer.DPOTrainer` (ImportError) nor a `--dpo` flag on `mlx_lm.lora` is present in this version. The `mlx_lm.lora --help` output shows no DPO-related flags; the `mlx_lm.tuner` module contains only: `callbacks, datasets, dora, evaluate, linear_to_lora_layers, lora, train, trainer, utils`.
+- **Backend switch:** Replaced `mlx-lm` DPO (unavailable in v0.31.3) with `mlx-lm-lora` v2.1.0 (Goekdeniz-Guelmez, PyPI). CLI: `mlx_lm_lora.train --train-mode dpo`. Data format `{prompt, chosen, rejected}` is unchanged — no Phase 2 data rework was needed.
+- **Adapter-stacking choice (fused SFT as reference):** SFT v2 LoRA is fused into the base model first (`scripts/fuse_sft.py` → `outputs/qwen25_3b_sft_fused/`). This fused model is used as both `--model` and `--reference-model-path` for DPO. KL is anchored at SFT, preserving the schema-alignment SFT taught; the DPO LoRA is a clean separable artifact on top.
+- **Artifacts:** `scripts/train_dpo.py` (updated dispatcher), `scripts/fuse_sft.py` (new fuse wrapper), `configs/dpo_trace_qwen25_3b.yaml` (updated config with fused-model paths, `learning_rate: 5e-6`, `iters: 150`).
 
-Upgrade attempted (`uv run pip install --upgrade mlx-lm`) — no change; 0.31.3 is already the latest version available in this environment.
+### Background (historical)
 
-**Not doing:** writing a manual DPO training loop in MLX as a workaround (explicitly excluded by the hard stop condition).
+**mlx-lm version:** 0.31.3
+**DPO status at the time:** NOT AVAILABLE
 
-**Next step awaiting user sign-off:** either pin a newer mlx-lm pre-release that includes DPO, or wait for 0.32.x+ which is expected to add `--training-mode dpo` or equivalent. The scaffolding in `scripts/train_dpo.py` and `configs/dpo_trace_qwen25_3b.yaml` is already correct in structure; it only needs the mlx-lm DPO API to land.
+Neither `mlx_lm.tuner.dpo_trainer.DPOTrainer` (ImportError) nor a `--dpo` flag on `mlx_lm.lora` was present. Upgrade to latest mlx-lm was attempted but 0.31.3 was already current. A manual DPO loop in MLX was explicitly excluded.
+
+---
+
+## 6. Phase 2.4 audit — post-fix sample review (2026-04-27)
+
+Reviewed `data/sample_dpo_v0.jsonl` (6 pairs: 2× over_flatten, 2× add_coaching, 2× mis_tier_mixed) after fixing two template glitches in Family B.
+
+**Pairs reviewed:**
+
+| case_id | axis | result |
+|---|---|---|
+| dpo_over_000 | over_flatten | ✓ Chosen prospective+intent, rejected semantic+null. Policy axis clean. |
+| dpo_over_001 | over_flatten | ✓ Chosen prospective+intent, rejected semantic+null. Policy axis clean. |
+| dpo_add__022 | add_coaching | ✓ Tier same (episodic); rejected adds coaching + fabricated "Restart morning routine." intent. Fix confirmed: no duplicate word. |
+| dpo_add__023 | add_coaching | ✓ Tier same (semantic); rejected adds coaching + fabricated "Address my pattern of under-charging for my work through deliberate practice." intent. Fix confirmed: grammatical noun form. |
+| dpo_mis__044 | mis_tier_mixed | ✓ Chosen prospective+intent, rejected episodic+null. topic_cluster differs (expected on this axis). |
+| dpo_mis__045 | mis_tier_mixed | ✓ Chosen prospective+intent, rejected episodic+null. Policy axis clean. |
+
+**Verdict:** All 6 pairs pass. Rejected outputs are plausibly wrong. Chosen outputs have no accidental coaching. The two fixed add_coaching cases now differ only on the intended policy axis (coaching+fabricated intent vs faithful witness), with no grammatical artefacts introducing a spurious gradient.
