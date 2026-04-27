@@ -1,5 +1,13 @@
 ## SFT Eval v1
 
+> **What this file is.** Stress-eval baseline + adapter run on
+> `data/generated/spreadsheet_heldout_stress_v1.jsonl` (40 cases). The "Gate:
+> FAIL" line below reflects that the 5-condition gate cannot be evaluated
+> standalone from this file — it requires the per-case JSON to be chained
+> into the regular eval run. The actual gate verdict for v1 is in
+> `collab_sft_v1.md`. This file exists so the stress-set numbers are
+> committed alongside the regular-set numbers.
+
 **Base model:** mlx-community/Qwen2.5-3B-Instruct-4bit
 **Adapter:** adapters/sft_collab_eval_qwen25_3b_v1/
 **Cases evaluated:** 40
