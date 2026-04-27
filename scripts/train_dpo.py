@@ -3,6 +3,7 @@
 DPO training scaffold for Trace Layer 2 prospective-memory policy shaping.
 
 Backend: mlx-lm-lora (mlx_lm_lora.train --train-mode dpo).
+Install: pip install -U mlx-lm-lora
 Tested against mlx-lm-lora v2.1.0.
 
 Adapter-stacking strategy: SFT v2 adapter is fused into the base model first
