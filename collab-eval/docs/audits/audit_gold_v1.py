@@ -2,6 +2,9 @@
 
 Samples 5 cases per primary_dimension from spreadsheet_train_v1.jsonl
 and reports what gold does to each kind of noise row.
+
+Usage (from collab-eval/ root):
+    python docs/audits/audit_gold_v1.py
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).parents[2]
 
 
 def parse_csv_lines(text: str) -> list[list[str]]:
