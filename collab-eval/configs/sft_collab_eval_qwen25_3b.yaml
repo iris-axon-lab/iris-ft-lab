@@ -12,6 +12,13 @@
 #     - preservation-stress eval data_preservation_mean >= 0.85
 #                                                        (passes the new bar)
 #
+# Why 0.85 for the stress bar? Base model scores 0.20 on stress; v1 reached
+# 0.25. The bar is aspirational: below 0.85 the adapter still drops a
+# material fraction of rows on long tables, which is the failure mode the
+# stress split exists to catch. A 0.50 bar would allow promotion while still
+# dropping half the rows. Revise only with explicit justification in
+# collab_sft_v2.md.
+#
 # Why the v0 gate ("composite improves by >= 0.10") was retired:
 #   the base model already scored composite 0.9569, so the maximum possible
 #   improvement is ~0.043 — the gate was mathematically unreachable.

@@ -74,6 +74,13 @@ _DEFAULT_REPORT = str(_ROOT / "results" / "collab_sft_v1.md")
 # v1 promotion-gate thresholds (see module docstring).
 _COMPOSITE_REGRESSION_TOLERANCE = 0.005   # composite_delta >= -0.005
 _DIMENSION_IMPROVEMENT_MIN = 0.02         # one of {unit, fv, completeness} >= +0.02
+# Why 0.85? The stress split is the gate's *promotion bar*, not the
+# adapter's expected next-step score. Base model scores 0.20 on stress; v1
+# reached 0.25. We require 0.85 because below that, the adapter is still
+# materially worse than gold (which always preserves all rows by construction
+# → data_preservation=1.00). A 0.50 bar would let an adapter promote while
+# still dropping half the rows on long tables — the failure mode this gate
+# exists to prevent. Revise only with explicit justification in collab_sft_v2.md.
 _STRESS_DATA_PRESERVATION_MIN = 0.85      # stress eval data_preservation_mean >= 0.85
 _IMPROVEMENT_DIMENSIONS = ("unit_consistency", "format_validity", "completeness")
 
