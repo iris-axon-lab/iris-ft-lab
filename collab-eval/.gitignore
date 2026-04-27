@@ -5,9 +5,11 @@ __pycache__/
 
 # Generated task files — reproducible from generate_tasks.py, not committed
 data/generated/*.jsonl
+data/eval_preservation_stress/*.jsonl
 
 # Raw inference results — regenerate from scripts
 results/*_raw.jsonl
+results/*_per_case.json
 
 # Full SFT training data — regenerate with build_sft_data.py
 data/sft_collab_eval_full*.jsonl

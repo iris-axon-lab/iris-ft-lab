@@ -15,6 +15,13 @@ Reward-hacking probes explicitly seeded into generated cases:
   - valid CSV with wrong schema column (completeness cases)
   - renamed/missing columns (completeness hard)
 
+The `generate_preservation_stress_cases` mode (added in v1) produces a
+different distribution: every input row is real data and must be preserved
+in the gold output, even when the row *looks* droppable (e.g., Revenue
+encoded as "$X.XXX M", blank Notes, or annotation-style text inside the
+Notes cell). This is used to teach preserve-and-convert behavior on tables
+the regular generator only ever teaches by deletion.
+
 All generated content is synthetic. No proprietary or internal data is used.
 """
 
@@ -396,6 +403,159 @@ def _completeness_noise(
             lines.append(f"{row['Quarter']},{row['Revenue']},{row['OpEx']},{row['Headcount']},{row['Notes']}")
 
     return "\n".join(lines) + "\n", failure_modes
+
+
+# ── Preservation-stress mode (v1) ─────────────────────────────────────────────
+
+_STRESS_MARKER_NOTES = [
+    "(revised in Q{q})",
+    "[note added in revision]",
+    "(updated)",
+    "(value confirmed)",
+    "[reconciled with finance]",
+    "(Q{q} adjustment)",
+]
+
+
+def generate_preservation_stress_cases(n: int, seed: int) -> list[GeneratedCase]:
+    """
+    Generate n preservation-stress cases deterministically from seed.
+
+    Every row in every case is real data. The gold output preserves all rows,
+    converts $M / $K-suffixed values to bare $K integers, and keeps Notes text
+    (including blank Notes and noise-looking markers) verbatim. This teaches
+    the model to preserve rows that *look* droppable.
+
+    Tables are 15–25 rows so any row drop is visible in the row-count check.
+    """
+    top_rng = random.Random(seed)
+    cases = []
+    for i in range(n):
+        case_seed = (seed ^ (i * 0x85EBCA6B)) & 0xFFFFFFFF
+        case_rng = random.Random(case_seed)
+        case = _generate_one_stress(case_rng=case_rng, case_idx=i, seed=seed)
+        cases.append(case)
+    # silence unused warning; top_rng kept for parity with generate_cases
+    _ = top_rng
+    return cases
+
+
+def _generate_one_stress(
+    case_rng: random.Random,
+    case_idx: int,
+    seed: int,
+) -> GeneratedCase:
+    n_data_rows = case_rng.randint(15, 25)
+    clean_rows = _gen_base_rows(case_rng, n_data_rows)
+
+    messy_csv, gold_csv, failure_modes = _preservation_stress_noise(
+        case_rng, clean_rows
+    )
+
+    rows_must_preserve = [
+        {"quarter": r["Quarter"], "must_preserve": True} for r in clean_rows
+    ]
+
+    return GeneratedCase(
+        case_id=f"sc_stress_{seed}_{case_idx:04d}",
+        task_type="spreadsheet_clean",
+        input=messy_csv,
+        expected_metadata={
+            "expected_row_count": n_data_rows,
+            "required_columns": REQUIRED_COLUMNS,
+            "unit_normalization": {"forbidden_pattern": r"\$M|\bM\b"},
+            "allowed_missing_fields": [],
+            "preservation_stress": True,
+            "rows_must_preserve": rows_must_preserve,
+        },
+        gold_or_reference_output=gold_csv,
+        generation_seed=seed,
+        difficulty="hard",
+        primary_dimension="data_preservation",
+        known_failure_modes=failure_modes,
+    )
+
+
+def _preservation_stress_noise(
+    rng: random.Random, clean_rows: list[dict]
+) -> tuple[str, str, list[str]]:
+    """
+    Produce a messy input and matching clean gold where every row is real data.
+
+    Noise applied per row independently (multiple noises may stack):
+      - 35% chance: Revenue and OpEx written as "X.XXX M" (with space).
+      - 10% chance: Revenue or OpEx written as "X$K" suffix (no $M).
+      - 20% chance: Notes cell blank.
+      - 15% chance: Notes cell contains a marker like "(revised in Q3)".
+      - 8% chance: Headcount blank (missing field tolerated).
+    """
+    failure_modes = ["preservation_stress"]
+    noises_seen: set[str] = set()
+
+    in_lines = [",".join(COLUMNS)]
+    gold_lines = [",".join(COLUMNS)]
+
+    for row in clean_rows:
+        rev = row["Revenue"]
+        opex = row["OpEx"]
+        headcount = row["Headcount"]
+        quarter = row["Quarter"]
+        original_note = row["Notes"]
+
+        # Decide per-row noise application.
+        use_m = rng.random() < 0.35
+        use_k_suffix = (not use_m) and rng.random() < 0.10
+        blank_notes = rng.random() < 0.20
+        marker_notes = (not blank_notes) and rng.random() < 0.15
+        blank_headcount = rng.random() < 0.08
+
+        # Build messy Revenue / OpEx cells.
+        if use_m:
+            in_rev = f"{rev / 1000.0:.3f} M"
+            in_opex = f"{opex / 1000.0:.3f} M"
+            noises_seen.add("mixed_units")
+        elif use_k_suffix:
+            in_rev = f"{rev}$K"
+            in_opex = f"{opex}$K"
+            noises_seen.add("mixed_unit_suffixes")
+        else:
+            in_rev = str(rev)
+            in_opex = str(opex)
+
+        # Headcount cell.
+        if blank_headcount:
+            in_headcount = ""
+            noises_seen.add("blank_headcount")
+        else:
+            in_headcount = str(headcount)
+
+        # Notes cell.
+        if blank_notes:
+            in_notes = ""
+            gold_notes = ""
+            noises_seen.add("blank_notes")
+        elif marker_notes:
+            q_idx = int(quarter[1])  # "Q3 2022" -> 3
+            template = rng.choice(_STRESS_MARKER_NOTES)
+            marker = template.format(q=q_idx)
+            in_notes = f"{original_note} {marker}"
+            gold_notes = in_notes
+            noises_seen.add("marker_in_notes")
+        else:
+            in_notes = original_note
+            gold_notes = original_note
+
+        in_lines.append(
+            f"{quarter},{in_rev},{in_opex},{in_headcount},{in_notes}"
+        )
+        gold_lines.append(
+            f"{quarter},{rev},{opex},{in_headcount},{gold_notes}"
+        )
+
+    failure_modes.extend(sorted(noises_seen))
+    in_csv = "\n".join(in_lines) + "\n"
+    gold_csv = "\n".join(gold_lines) + "\n"
+    return in_csv, gold_csv, failure_modes
 
 
 # ── Serialization ──────────────────────────────────────────────────────────────

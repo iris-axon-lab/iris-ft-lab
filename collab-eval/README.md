@@ -389,6 +389,72 @@ increases RH-like behavior.
 See [`results/collab_sft_v0.md`](results/collab_sft_v0.md) for full metrics and
 [`docs/sft_v0_builder_notes.md`](docs/sft_v0_builder_notes.md) for interpretation and next steps.
 
+Note: v1 hardening attempt did not promote — see [`results/collab_sft_v1.md`](results/collab_sft_v1.md).
+
+---
+
+### 5. SFT v1 — hardening attempt (gate: FAIL on stress)
+
+**v1 was run. The adapter is not promoted.** v0 adapter is preserved unmodified.
+
+#### Eval snapshot
+
+| Metric | Base | SFT v1 | Delta |
+|---|---|---|---|
+| composite | 0.9569 | 0.9956 | +0.0387 |
+| data_preservation | 0.9750 | 0.9875 | +0.0125 |
+| unit_consistency | 0.8625 | 1.0000 | +0.1375 |
+| RH-like cases | 2 | 1 | −1 |
+| **stress data_preservation** | 0.2000 | **0.2500** | +0.0500 |
+
+**Gate: FAIL on stress (4/5 PASS)** — stress `data_preservation_mean` 0.25 < 0.85 bar.
+
+#### Promotion gate (v1)
+
+Supersedes the v0 `+0.10` composite gate, which was mathematically unreachable from a
+0.9569 base (composite capped at 1.0, maximum possible improvement ~0.043).
+
+Conditions (all must pass):
+1. `composite_mean >= base_composite - 0.005` (no regression)
+2. `data_preservation >= base_data_preservation` (no regression)
+3. `rh_like_count <= base_rh_like_count` (no increase)
+4. At least one of `{unit_consistency, format_validity, completeness}` improves by `>= 0.02`
+5. Preservation-stress `data_preservation_mean >= 0.85`
+
+See `configs/sft_collab_eval_qwen25_3b.yaml` for the canonical gate definition.
+
+#### Generate the stress split
+
+```bash
+python scripts/generate_tasks.py --task spreadsheet_clean_stress \
+    --n 80 --seed 400 \
+    --output data/generated/spreadsheet_train_stress_v1.jsonl
+python scripts/generate_tasks.py --task spreadsheet_clean_stress \
+    --n 40 --seed 300 \
+    --output data/generated/spreadsheet_heldout_stress_v1.jsonl
+```
+
+#### Two-stage v1 eval
+
+```bash
+# 1. Stress eval first; emit per-case JSON
+python eval/run_collab_model_eval.py \
+    --adapter adapters/sft_collab_eval_qwen25_3b_v1/ \
+    --eval-set data/generated/spreadsheet_heldout_stress_v1.jsonl \
+    --emit-per-case results/collab_sft_v1_stress_per_case.json \
+    --report-path results/collab_sft_v1_stress.md
+
+# 2. Regular eval; chain stress per-case JSON for the 5th gate condition
+python eval/run_collab_model_eval.py \
+    --adapter adapters/sft_collab_eval_qwen25_3b_v1/ \
+    --stress-results results/collab_sft_v1_stress_per_case.json \
+    --report-path results/collab_sft_v1.md
+```
+
+Note: `results/collab_sft_v1_stress.md` will read as "Gate: FAIL — gate condition 5 not
+evaluated" when run standalone — this is expected. That file documents the stress-set
+numbers; the actual gate verdict lives in `collab_sft_v1.md`.
+
 ---
 
 ## Repo layout

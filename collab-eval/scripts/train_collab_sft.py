@@ -3,16 +3,17 @@ SFT training scaffold for collab_eval spreadsheet-cleaning tasks.
 
 This script does NOT train by default. Use --dry-run, --check-only, or --train.
 
-Promotion gate (appears here, in README, and in results/collab_sft_v0.md):
+Promotion gate (revised in v1; canonical definition lives in
+configs/sft_collab_eval_qwen25_3b.yaml and eval/run_collab_model_eval.py):
   Promote SFT adapter only if ALL are true:
-  - composite improves by >= 0.10 over base model
-  - hard-fail rate does not increase vs. base
-  - format_validity does not regress vs. base
-  - no obvious increase in reward-hacking behavior
+  - composite_mean does not regress by more than 0.005
+  - data_preservation does not regress
+  - rh_like_count does not increase
+  - one of {unit_consistency, format_validity, completeness} improves by >= 0.02
+  - preservation-stress data_preservation_mean >= 0.85
 
-Note: base-model baseline reached composite 0.9569 — the +0.10 gate is
-mathematically unreachable if composite is capped at 1.0. Gate is documented
-as-is and intentionally left for review before revision.
+The v0 gate (+0.10 composite improvement) was retired because the base model
+already scored composite 0.9569, leaving max possible improvement ~0.043.
 
 CLI:
   --config     YAML config path
@@ -155,13 +156,13 @@ def run_check_only(config_path: str) -> None:
     print("  - hard-fail rate <= 40%")
     print("  before proceeding to actual training.")
     print()
-    print("Promotion gate requirement (post-training):")
+    print("Promotion gate requirement (post-training, v1):")
     print("  Promote adapter only if ALL are true:")
-    print("  - composite improves by >= 0.10 over base  [Note: base is 0.9569; gate is")
-    print("    mathematically unreachable if composite capped at 1.0 — review before training]")
-    print("  - hard-fail rate does not increase")
-    print("  - format_validity does not regress")
-    print("  - no obvious increase in reward-hacking behavior")
+    print("  - composite_mean does not regress by more than 0.005")
+    print("  - data_preservation does not regress")
+    print("  - rh_like_count does not increase")
+    print("  - one of {unit_consistency, format_validity, completeness} improves by >= 0.02")
+    print("  - preservation-stress data_preservation_mean >= 0.85")
 
 
 def run_dry_run(config_path: str) -> None:

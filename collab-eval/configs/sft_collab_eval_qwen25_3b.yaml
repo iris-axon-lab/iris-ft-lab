@@ -1,47 +1,70 @@
 # SFT config for spreadsheet-cleaning tasks
 # Base model: mlx-community/Qwen2.5-3B-Instruct-4bit
 #
-# Promotion gate (must be met before committing this adapter):
-#   - composite improves by >= 0.10 over base
-#   - hard-fail rate does not increase
-#   - format_validity does not regress
-#   - no obvious increase in reward-hacking behavior
+# Promotion gate (revised in v1 — supersedes the v0 +0.10 composite gate;
+# see collab_sft_v0.md for context on why the v0 gate was unreachable):
+#   Promote SFT adapter if ALL are true:
+#     - composite_mean       >= base_composite - 0.005   (no regression)
+#     - data_preservation    >= base_data_preservation   (no regression)
+#     - rh_like_count        <= base_rh_like_count       (no increase)
+#     - at least one of {unit_consistency, format_validity, completeness}
+#       improves by >= 0.02                              (forward progress)
+#     - preservation-stress eval data_preservation_mean >= 0.85
+#                                                        (passes the new bar)
 #
-# Note: base-model baseline (training_cycle_v0) reached composite 0.9569.
-# The +0.10 gate is mathematically unreachable if composite is capped at 1.0.
-# Gate is documented as-is and intentionally left for review before revision.
+# Why 0.85 for the stress bar? Base model scores 0.20 on stress; v1 reached
+# 0.25. The bar is aspirational: below 0.85 the adapter still drops a
+# material fraction of rows on long tables, which is the failure mode the
+# stress split exists to catch. A 0.50 bar would allow promotion while still
+# dropping half the rows. Revise only with explicit justification in
+# collab_sft_v2.md.
+#
+# Why the v0 gate ("composite improves by >= 0.10") was retired:
+#   the base model already scored composite 0.9569, so the maximum possible
+#   improvement is ~0.043 — the gate was mathematically unreachable.
 #
 # Do NOT train unless the baseline gate passed:
 #   - composite mean >= 0.30
 #   - hard-fail rate <= 40%
-# See results/model_baseline_v0.md for current gate status.
+# See results/model_baseline_v0.md for current baseline gate status.
 
 model: mlx-community/Qwen2.5-3B-Instruct-4bit
 data: data/sft_collab_eval_full
 train: true
 test: false
 
-# LoRA adapter settings
+# LoRA adapter settings (gentler recipe — v0 mode-collapsed)
+# v0 used rank=8, scale=20.0, dropout=0.0, iters=1000, lr=1e-4 and produced
+# numerical convergence + token loops (see docs/sft_v1_failure_audit.md).
+# v1 reduces capacity (rank, scale), adds dropout, shortens training, and
+# halves the learning rate to keep the model close to base behavior while
+# still teaching the preserve-and-convert demonstrations.
 num_layers: 16
 lora_parameters:
-  rank: 8
-  scale: 20.0
-  dropout: 0.0
+  rank: 4
+  scale: 8.0
+  dropout: 0.05
 
 # Training hyperparameters
 batch_size: 4
-iters: 1000
-steps_per_eval: 200
-save_every: 200
-learning_rate: 1.0e-4
+iters: 200
+# steps_per_eval = 50: read valid.jsonl from data/sft_collab_eval_full
+# (added in v1 Phase 2.1) so val loss is reported during training and supports
+# best-checkpoint selection. With iters=200, evals fire at 50/100/150/200.
+steps_per_eval: 50
+# save_every = 50: emit checkpoints at 50/100/150/200 so the best val-loss
+# checkpoint can be selected post-hoc (mlx-lm does not auto-pick best).
+save_every: 50
+learning_rate: 5.0e-5
 lr_schedule:
   name: cosine_decay
-  warmup: 100
-  arguments: [1.0e-4, 1000, 1.0e-6]
+  warmup: 20
+  arguments: [5.0e-5, 200, 5.0e-7]
 grad_checkpoint: false
 
 # Output
-adapter_path: adapters/sft_collab_eval_qwen25_3b/
+# v0 adapter at adapters/sft_collab_eval_qwen25_3b/ is preserved unmodified.
+adapter_path: adapters/sft_collab_eval_qwen25_3b_v1/
 
 # Sequence length
 max_seq_length: 2048
