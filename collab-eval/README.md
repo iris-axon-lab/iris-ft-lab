@@ -457,6 +457,45 @@ numbers; the actual gate verdict lives in `collab_sft_v1.md`.
 
 ---
 
+### 6. SFT v2 — data rebalance attempt (gate: FAIL with concern)
+
+**v2 was run. The adapter is not promoted.** v0 and v1 adapters are preserved unmodified.
+
+#### Eval snapshot
+
+| Metric | Base | SFT v2 | Delta |
+|---|---|---|---|
+| composite | 0.9569 | 0.9912 | +0.0343 |
+| data_preservation | 0.9750 | 0.9750 | +0.0000 |
+| unit_consistency | 0.8625 | 1.0000 | +0.1375 |
+| RH-like cases | 2 | 2 | +0 |
+| **stress data_preservation** | 0.2000 | **0.2500** | +0.0500 |
+
+**Gate: FAIL on stress with concern (4/5 PASS)** — stress `data_preservation_mean` 0.25 < 0.85 bar.
+**Hypothesis (50% stress data lifts preservation) was refuted: identical to v1 despite 3× more stress
+training cases.**
+
+#### Headline diagnostic
+
+The v2 training dataset doubled stress proportion from 25% to 50% (480 total = 240 regular +
+240 stress), dropping the deletion-event ratio from 61.2% to 30.6%
+(`docs/sft_v2_data_audit.md`). Conditions 1–4 all pass. Condition 5 fails at 0.25 — the same
+score as v1, which had only 80 stress training cases. The stress data taught unit_consistency
+cleanly (stress `unit_consistency` 0.70 → 1.00, identical to v1), but the row-preservation
+instruction did not transfer at all. The flat trajectory across two experiments (0.25 at v1
+with 80 stress cases; 0.25 at v2 with 240 stress cases) points to gradient competition or
+signal asymmetry as the dominant failure mode, not data quantity. See
+[`results/collab_sft_v2.md`](results/collab_sft_v2.md) for the full diagnostic and three v3
+candidates (curriculum training, 75% rebalance, row-level reward shaping).
+
+#### Reproducibility
+
+- Config: `configs/sft_collab_eval_qwen25_3b_v2.yaml`
+- Training data: `data/sft_collab_eval_full_v2/` (regenerate from seeds 100 + 500)
+- Held-out splits: unchanged from v1 (`spreadsheet_heldout_v1.jsonl` seed=200, `spreadsheet_heldout_stress_v1.jsonl` seed=300)
+
+---
+
 ## Repo layout
 
 ```

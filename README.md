@@ -68,6 +68,21 @@ for the full report.
 
 ---
 
+## Lessons & failure modes
+
+Both pipelines hit real failure modes during development — mode collapse, a quantized-base
+fusion defect, an unreachable promotion gate, training-distribution asymmetry, a missing
+DPO backend, and several others. Each was diagnosed, fixed, and committed; the
+consolidated catalog with symptoms, root causes, fixes, and cross-cutting patterns lives in
+[`FAILURE_MODES.md`](FAILURE_MODES.md).
+
+If you're iterating on either pipeline, **read it first.** Most of the cross-cutting
+rules — "audit your gold output before training", "calibrate gates against base-model
+evidence", "beware silent transformations on quantized weights", "tool-call timeouts are
+a recipe parameter" — would have saved a session each time they were learned the hard way.
+
+---
+
 ## Hardware
 
 - MacBook Pro M4 / 64GB unified memory / 1TB storage
@@ -146,23 +161,21 @@ make validate-results       # checks all artifacts exist and paths are consisten
 
 ## Eval Snapshot — collab-eval (document tasks)
 
-> **Fine-tune run pending.** No RL checkpoint exists for collab-eval yet. The FT v1 row
-> is a placeholder and must not be read as a measured result.
+> **Two SFT attempts; neither promoted.** v0 mode-collapsed; v1 hardened recipe but stress
+> preservation flat at 0.25; v2 doubled stress data, still flat at 0.25 (hypothesis refuted —
+> see [`collab-eval/results/collab_sft_v2.md`](collab-eval/results/collab_sft_v2.md)). Both
+> point at gradient competition or signal asymmetry as the dominant failure mode, not data
+> quantity. v3 (curriculum learning) and v4 (DPO on preservation pairs) are the next
+> experimental candidates.
 
-35 synthetic cases across three document-handling task types, graded deterministically
-(no LLM judge configured). Dimensions marked *unassessed* are held at 0.5 until an LLM
-judge is wired in.
+| Run | composite | data_preservation | unit_consistency | stress data_preservation | Verdict |
+|---|---|---|---|---|---|
+| Base | 0.9569 | 0.9750 | 0.8625 | 0.2000 | — |
+| SFT v0 | 0.9110 | 0.7500 | 1.0000 | — | NOT PROMOTED (mode collapse) |
+| SFT v1 | 0.9956 | 0.9875 | 1.0000 | 0.2500 | NOT PROMOTED (gate: FAIL on stress) |
+| SFT v2 | 0.9912 | 0.9750 | 1.0000 | 0.2500 | NOT PROMOTED (with concern; hypothesis refuted) |
 
-| Model | Mean Composite | doc_revision | spreadsheet_clean | citation_ground |
-|-------|---------------|--------------|-------------------|-----------------|
-| Base  | 0.67          | 0.62         | 0.81              | 0.58            |
-| FT v1 | —             | —            | —                 | — ← PLACEHOLDER |
-
-**Interpretation:** The base score reflects the deterministic grader applied to a curated
-range of synthetic outputs — from ideal to catastrophic — not live model inference. The
-delta versus FT v1 cannot be measured until an RL training run is completed.
-
-[Full results](collab-eval/results/eval_results_v1.md) · [Reward design rationale](collab-eval/docs/rl_env_design.md)
+[Full reports](collab-eval/results/) · [Reward design rationale](collab-eval/docs/rl_env_design.md) · [Failure modes](FAILURE_MODES.md)
 
 ---
 
