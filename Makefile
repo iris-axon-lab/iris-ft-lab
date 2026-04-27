@@ -14,7 +14,8 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 .PHONY: help verify generate-data prepare-data sft eval \
-        sft-v1 eval-v1 eval-tracking dpo inference test validate-results
+        sft-v1 eval-v1 eval-tracking dpo inference test validate-results \
+        install-dpo-backend fuse-sft generate-dpo-data eval-dpo
 
 help:
 	@echo ""
@@ -29,11 +30,17 @@ help:
 	@echo "  make inference         Print inference usage example"
 	@echo "  make test              Run test suite"
 	@echo ""
+	@echo "DPO targets (v1 PROMOTED — eval/dpo_v1_results.md):"
+	@echo "  make install-dpo-backend  Install mlx-lm-lora (separate from mlx-lm)"
+	@echo "  make fuse-sft             Fuse SFT v2 into base (one-time, ~6 GB float16)"
+	@echo "  make generate-dpo-data    Generate preference pairs (80 train + 12 valid)"
+	@echo "  make dpo                  Train DPO LoRA  →  outputs/dpo_qwen25_3b_v1/"
+	@echo "  make eval-dpo             Compare baseline vs DPO  →  eval/dpo_v1_results.md"
+	@echo ""
 	@echo "Legacy targets (v1 scaffold — not the published results):"
 	@echo "  make sft-v1            Train with v1 config  →  outputs/sft_qwen25_3b/"
 	@echo "  make eval-v1           Run eval_extraction.py with v1 adapter"
 	@echo "  make eval-tracking     Run intention-reality tracking eval"
-	@echo "  make dpo               Run DPO scaffold (check train_dpo.py for availability)"
 	@echo ""
 
 # ── Environment ───────────────────────────────────────────────────────────────
@@ -152,8 +159,34 @@ eval-v1:
 		--config configs/sft_trace_qwen25_3b.yaml \
 		--adapter outputs/sft_qwen25_3b
 
+# ── DPO workflow (v1 PROMOTED — see eval/dpo_v1_results.md) ──────────────────
+
+# Step 1 — install DPO backend (one-time)
+install-dpo-backend:
+	pip install -U mlx-lm-lora
+
+# Step 2 — fuse SFT v2 adapter into base model (one-time, ~6 GB float16)
+fuse-sft:
+	python scripts/fuse_sft.py
+
+# Step 3 — generate preference pairs (deterministic, ~80 train + 12 valid pairs)
+generate-dpo-data:
+	python scripts/generate_synthetic_dpo.py --n 80 --seed 42 --output data/processed/dpo/train.jsonl
+	python scripts/generate_synthetic_dpo.py --n 12 --seed 99 --output data/processed/dpo/valid.jsonl
+	python scripts/validate_dpo_data.py data/processed/dpo/train.jsonl
+	python scripts/validate_dpo_data.py data/processed/dpo/valid.jsonl
+
+# Step 4 — train DPO (requires fused-SFT model + preference pairs)
 dpo:
 	python scripts/train_dpo.py --config configs/dpo_trace_qwen25_3b.yaml
+
+# Step 5 — evaluate DPO adapter against the 12-case gold set
+eval-dpo:
+	python scripts/eval_extraction.py \
+		--eval-data data/eval_gold.jsonl \
+		--config configs/dpo_trace_qwen25_3b.yaml \
+		--adapter outputs/dpo_qwen25_3b_v1 \
+		--verbose
 
 eval-tracking:
 	python scripts/eval_tracking.py

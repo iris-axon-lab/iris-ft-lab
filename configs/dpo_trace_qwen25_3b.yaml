@@ -1,43 +1,34 @@
 # Trace DPO config — prospective-memory policy shaping
 #
-# STATUS: scaffold config — MLX-native DPO support is actively evolving.
-# Before running, check: python scripts/train_dpo.py --config this_file
-# train_dpo.py will detect whether DPO is available and exit honestly if not.
+# Backend: mlx-lm-lora v2.1.0 (mlx_lm_lora.train --train-mode dpo)
+# KL anchored at SFT preserves the schema-alignment SFT taught.
+#
+# Adapter-stacking: SFT v2 fused into base first (scripts/fuse_sft.py),
+# then a fresh DPO LoRA trains on top of the fused model.
 #
 # Policy goal: reinforce "witness, not coach" behavior.
 #   Chosen:   correctly identifies prospective commitments when warranted;
 #             neutral, structured output without advice or prescriptive framing.
-#   Rejected: over-flattens commitment signals into generic semantic descriptions,
-#             or adds coaching / action recommendations.
+#   Rejected: over-flattens commitment signals, adds coaching framing, or
+#             misassigns tier on mixed episodic+prospective inputs.
 
 model:
-  # Start from the SFT-trained checkpoint when available (recommended).
-  # The SFT adapter is the reference policy from which DPO diverges.
-  path: "mlx-community/Qwen2.5-3B-Instruct-4bit"
-  # Uncomment to start from a trained SFT adapter:
-  # adapter_path: "outputs/sft_qwen25_3b"
+  path: "outputs/qwen25_3b_sft_fused"
+
+reference_model:
+  path: "outputs/qwen25_3b_sft_fused"
 
 data:
-  train: "data/processed/dpo_train.jsonl"
-  valid: "data/processed/dpo_val.jsonl"
-  # DPO format: {"prompt": "...", "chosen": "...", "rejected": "..."}
-  # This is NOT the messages format — see data/sample_dpo.jsonl for examples.
-  format: "dpo"
+  dir: "data/processed/dpo"        # contains train.jsonl + valid.jsonl
 
 dpo:
-  # KL penalty weight — controls how far the trained policy can diverge
-  # from the reference policy. Lower = more aggressive shaping.
-  # 0.1 is a standard starting point; increase if the policy collapses.
   beta: 0.1
-
-  # Reference model for computing the KL divergence baseline.
-  # Set to the same base model (or the SFT checkpoint) used for initialization.
-  reference_model: "mlx-community/Qwen2.5-3B-Instruct-4bit"
+  loss_type: "sigmoid"
 
 training:
-  epochs: 1
+  iters: 150
   batch_size: 2
-  learning_rate: 5.0e-5
+  learning_rate: 5.0e-6
   max_seq_length: 512
   grad_checkpoint: true
 
@@ -45,11 +36,9 @@ lora:
   rank: 8
   alpha: 16
   dropout: 0.05
-  target_modules:
-    - q_proj
-    - v_proj
+  num_layers: 16
 
 output:
-  adapter_path: "outputs/dpo_qwen25_3b"
+  adapter_path: "outputs/dpo_qwen25_3b_v1"
   save_every: 50
   steps_per_report: 10

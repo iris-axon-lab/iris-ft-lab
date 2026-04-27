@@ -34,28 +34,37 @@ training and evaluation infrastructure for improving that.
 > See [`eval/results.md`](eval/results.md) for the full report including confusion matrices,
 > failure case analysis, and Trace-style integration examples.
 
-| Metric | Baseline (no adapter) | Fine-Tuned (SFT v2) |
-|--------|----------------------|---------------------|
-| Overall accuracy | 0/12 (0.0%) | **9/12 (75.0%)** |
-| episodic | 0/2 (0%) | 2/2 (100%) |
-| semantic | 0/3 (0%) | 3/3 (100%) |
-| procedural | 0/1 (0%) | 1/1 (100%) |
-| prospective | 0/6 (0%) | 3/6 (50%) |
-| aspiration-vs-commitment | 0/4 (0%) | 2/4 (50%) |
-| parse errors | 0 (wrong schema) | **0** |
+| Metric | Baseline (no adapter) | Fine-Tuned (SFT v2) | + DPO v1 |
+|--------|----------------------|---------------------|----------|
+| Overall accuracy | 0/12 (0.0%) | 9/12 (75.0%) | **12/12 (100.0%)** |
+| episodic | 0/2 (0%) | 2/2 (100%) | 2/2 (100%) |
+| semantic | 0/3 (0%) | 3/3 (100%) | 3/3 (100%) |
+| procedural | 0/1 (0%) | 1/1 (100%) | 1/1 (100%) |
+| prospective | 0/6 (0%) | 3/6 (50%) | **6/6 (100%)** |
+| aspiration-vs-commitment | 0/4 (0%) | 2/4 (50%) | 4/4 (100%) |
+| parse errors | 0 (wrong schema) | 0 | 0 |
 
-**Key finding:** The base model reliably outputs JSON but uses its own invented schema —
+**Key finding (SFT):** The base model reliably outputs JSON but uses its own invented schema —
 fields like `"memoryRecord"`, `"memory_records"`, `"extractedStatements"` — never the Trace
-`memory_tier` field. Even a light SFT pass (100 examples, ~4 epochs) is sufficient to align
-the model to the Trace schema and achieve 75% tier classification accuracy. All remaining errors
-are hard prospective edge cases: weak-signal commitments, conditional commitments, and
-mixed episodic+prospective inputs.
+`memory_tier` field. A light SFT pass (100 examples, ~4 epochs) is sufficient to align the
+model to the Trace schema and achieve 75% tier classification accuracy.
+
+**Key finding (DPO):** The remaining 3 SFT errors were all hard prospective edge cases —
+weak-signal commitments (`eval_008`), conditional commitments (`eval_009`), and mixed
+episodic+prospective inputs (`eval_010`). A small DPO run (80 synthetic preference pairs,
+150 iters at lr=5e-6, β=0.1) on top of the SFT-fused model corrected all three with no
+regressions on the 9 cases SFT already got right. See [`eval/dpo_v1_results.md`](eval/dpo_v1_results.md)
+for the full report.
 
 **Model:** `mlx-community/Qwen2.5-3B-Instruct-4bit` |
 **Adapter:** `outputs/sft_qwen25_3b_v2/` |
 **Training data:** [`data/sft_train_100.jsonl`](data/sft_train_100.jsonl) (100 examples, balanced 25/tier) |
 **Eval set:** [`data/eval_gold.jsonl`](data/eval_gold.jsonl) |
 **Full notes:** [`eval/notes.md`](eval/notes.md)
+
+**DPO adapter:** `outputs/dpo_qwen25_3b_v1/` |
+**DPO config:** [`configs/dpo_trace_qwen25_3b.yaml`](configs/dpo_trace_qwen25_3b.yaml) |
+**DPO data:** [`data/processed/dpo/`](data/processed/dpo/) (regenerate with `scripts/generate_synthetic_dpo.py`)
 
 ---
 
@@ -70,6 +79,8 @@ mixed episodic+prospective inputs.
 64GB unified memory is unusually large for a laptop — it comfortably fits a 4-bit quantized
 7B model (≈4GB) alongside activations, optimizer state, and LoRA adapters with room to spare.
 You can run meaningful fine-tuning experiments locally without cloud compute.
+DPO training peaks at ~19 GB on the float16 fused model (vs ~4 GB for SFT); smaller-RAM Macs
+should expect to use the SFT path only.
 
 ---
 
@@ -90,6 +101,10 @@ tool for this hardware.
 ---
 
 ## Quick start
+
+**For DPO only:** `pip install -U mlx-lm-lora` (third-party, separate from `mlx-lm`).
+The DPO scaffold (`scripts/train_dpo.py`) checks for this and exits cleanly if missing.
+See `data/dpo_design_notes.md` §5 for the rationale.
 
 ```bash
 # 1. Clone and enter the repo
@@ -301,9 +316,9 @@ If you accidentally stage real traces: `git reset HEAD <file>` before committing
 
 ## Known limitations
 
-1. **DPO is a scaffold.** MLX-LM's DPO API is evolving. `train_dpo.py` checks availability
-   at runtime and exits honestly if it's not yet supported. Check the mlx-lm changelog
-   before Stage 3 work.
+1. **DPO requires `mlx-lm-lora`.** The DPO backend is `mlx-lm-lora` (a separate third-party
+   package, not the same as `mlx-lm`). Install with `pip install -U mlx-lm-lora`. Tested
+   against v2.1.0. `train_dpo.py` checks availability at runtime and exits clearly if missing.
 
 2. **`data/sft_train_100.jsonl` is synthetic.** The 100 training examples are template-based
    and do not cover the full range of real trace inputs. To improve quality further, generate
@@ -344,13 +359,16 @@ If you accidentally stage real traces: `git reset HEAD <file>` before committing
 - [ ] Upgrade to Qwen2.5-7B if 3B quality plateaus on aspiration-vs-commitment cases
 
 ### Stage 3 — Policy shaping
-*DPO scaffolding, prospective-memory policy, Trace-style integration*
+*DPO preference learning, prospective-memory policy, Trace-style integration*
 
-- [ ] Open `notebooks/03_dpo_memory_policy.ipynb` — understand the policy goal before training
-- [ ] Generate 50–500 DPO preference pairs (real traces, real preference judgments)
-- [ ] Check DPO availability: `python scripts/train_dpo.py --check-only`
-- [ ] Run DPO from the SFT checkpoint: `make dpo`
-- [ ] Compare SFT vs DPO adapters on `eval_gold.jsonl` aspiration-vs-commitment cases
+DPO v1 is **PROMOTED** — 12/12 tier accuracy, 0 regressions. See [`eval/dpo_v1_results.md`](eval/dpo_v1_results.md).
+
+- [x] Open `notebooks/03_dpo_memory_policy.ipynb` — understand the policy goal before training
+- [x] Install DPO backend: `make install-dpo-backend` (`pip install -U mlx-lm-lora`)
+- [x] Fuse SFT v2 adapter into base model (one-time): `make fuse-sft` → `outputs/qwen25_3b_sft_fused/` (~6 GB float16)
+- [x] Generate preference pairs: `make generate-dpo-data` (80 train + 12 valid)
+- [x] Run DPO from the fused-SFT model: `make dpo` → `outputs/dpo_qwen25_3b_v1/`
+- [x] Eval DPO adapter: `make eval-dpo` — corrected all 3 prospective misses with 0 regressions
 - [ ] Run `eval_tracking.py` on intention-reality pairs from real trace data
 - [ ] Wire the trained adapter into Trace Layer 2 via `run_trace_style_inference.py`
 
