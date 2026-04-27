@@ -115,3 +115,22 @@ Three realistic Trace inputs showing baseline vs. fine-tuned predictions.
 - Eval set: `data/eval_gold.jsonl` (12 examples)
 - Seed: 42 (train/val split in prepare_data.py)
 - See `eval/notes.md` for full training command and hyperparameters.
+
+---
+
+## DPO v1 follow-up
+
+**Verdict: PROMOTED — 12/12 tier accuracy, 0 regressions.**
+
+DPO v1 corrected all three prospective failures documented above (`eval_008`, `eval_009`,
+`eval_010`) with no regressions on the 9 cases SFT already got right. Overall tier accuracy
+went from 9/12 (75%) to 12/12 (100%). All four aspiration-vs-commitment cases (including
+the two previously failing) now classify correctly.
+
+See [`eval/dpo_v1_results.md`](eval/dpo_v1_results.md) for the full per-case verdict table,
+promotion gate results, and reproducibility footer.
+
+A prior attempt (DPO v0) failed due to a fusion defect — the SFT adapter was stacked on the
+4-bit quantized base model rather than fused into a float16 model, causing the reference model
+and policy to diverge from the intended SFT baseline. See [`eval/dpo_v0_results.md`](eval/dpo_v0_results.md)
+for the historical record.
