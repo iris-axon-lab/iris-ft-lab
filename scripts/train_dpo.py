@@ -6,8 +6,9 @@ Backend: mlx-lm-lora (mlx_lm_lora.train --train-mode dpo).
 Tested against mlx-lm-lora v2.1.0.
 
 Adapter-stacking strategy: SFT v2 adapter is fused into the base model first
-(see scripts/fuse_sft.py). The fused model is used as both --model and
---reference-model-path, anchoring KL at SFT behavior.
+(see scripts/fuse_sft.py -- requires --dequantize for 4-bit base models).
+The fused model is used as both --model and --reference-model-path,
+anchoring KL at SFT behavior.
 
 Usage:
   python scripts/train_dpo.py --config configs/dpo_trace_qwen25_3b.yaml

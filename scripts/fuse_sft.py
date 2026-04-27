@@ -38,6 +38,7 @@ def main() -> None:
         "--model", BASE_MODEL,
         "--adapter-path", SFT_ADAPTER,
         "--save-path", FUSED_OUT,
+        "--dequantize",   # required: merging LoRA deltas into 4-bit quant without this is a no-op
     ]
     print("Fusing SFT v2 adapter into base model ...")
     print("  " + " \\\n    ".join(cmd))
