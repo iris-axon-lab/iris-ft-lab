@@ -10,6 +10,15 @@ Usage:
         --task spreadsheet_clean --n 80 --seed 200 \\
         --output data/generated/spreadsheet_heldout_v1.jsonl
 
+    python scripts/generate_tasks.py \\
+        --task spreadsheet_clean_stress --n 80 --seed 400 \\
+        --output data/generated/spreadsheet_train_stress_v1.jsonl
+
+The `spreadsheet_clean_stress` task type produces preservation-stress cases:
+15–25 row tables where every row is real data and the gold preserves all rows
+even when they look droppable ($M cells, blank Notes, marker-style notes).
+Used as supplemental SFT v1 training data and as a separate held-out eval.
+
 Only spreadsheet_clean is fully implemented in this cycle.
 doc_revision and citation_ground are stub placeholders.
 
@@ -41,6 +50,7 @@ sys.path.insert(0, str(_ROOT))
 
 from collab_eval.generation.spreadsheet_generator import (
     generate_cases,
+    generate_preservation_stress_cases,
     cases_to_jsonl,
     load_jsonl,
     GeneratedCase,
@@ -135,6 +145,66 @@ def validate_cases(cases: list[GeneratedCase]) -> list[str]:
         errors.append(
             f"Dataset missing primary_dimension coverage for: {sorted(missing_dims)}"
         )
+
+    return errors
+
+
+def _validate_stress_cases(cases: list[GeneratedCase]) -> list[str]:
+    """
+    Stress-specific integrity check. All preservation-stress cases share
+    primary_dimension=data_preservation by design, so multi-dim coverage is
+    intentionally not enforced. Per-case integrity matches validate_cases().
+    """
+    errors: list[str] = []
+    seen_ids: dict[str, int] = {}
+    seen_hashes: dict[str, int] = {}
+
+    for i, case in enumerate(cases):
+        if case.case_id in seen_ids:
+            errors.append(
+                f"case[{i}]: duplicate case_id '{case.case_id}' "
+                f"(also at index {seen_ids[case.case_id]})"
+            )
+        seen_ids[case.case_id] = i
+
+        h = _input_hash(case.input)
+        if h in seen_hashes:
+            errors.append(
+                f"case[{i}] ({case.case_id}): duplicate input hash "
+                f"(same as index {seen_hashes[h]})"
+            )
+        seen_hashes[h] = i
+
+        meta = case.expected_metadata
+        missing_keys = _REQUIRED_METADATA_KEYS - meta.keys()
+        if missing_keys:
+            errors.append(
+                f"case[{i}] ({case.case_id}): missing metadata keys: "
+                f"{sorted(missing_keys)}"
+            )
+        if not meta.get("preservation_stress"):
+            errors.append(
+                f"case[{i}] ({case.case_id}): missing preservation_stress flag"
+            )
+        if not meta.get("rows_must_preserve"):
+            errors.append(
+                f"case[{i}] ({case.case_id}): missing rows_must_preserve list"
+            )
+
+        if not det.csv_parseable(case.gold_or_reference_output):
+            errors.append(
+                f"case[{i}] ({case.case_id}): gold output is not parseable CSV"
+            )
+        else:
+            expected_rows = meta.get("expected_row_count")
+            if expected_rows is not None:
+                if not det.row_count_preserved(
+                    case.gold_or_reference_output, expected_rows
+                ):
+                    errors.append(
+                        f"case[{i}] ({case.case_id}): gold row count != "
+                        f"expected_row_count={expected_rows}"
+                    )
 
     return errors
 
@@ -312,6 +382,48 @@ def run(
             else:
                 print(f"No overlap with {validate_against}.")
 
+    elif task == "spreadsheet_clean_stress":
+        print(f"Generating {n} preservation-stress cases (seed={seed})...")
+        cases = generate_preservation_stress_cases(n=n, seed=seed)
+
+        dim_counts: dict[str, int] = collections.Counter(c.primary_dimension for c in cases)
+        diff_counts: dict[str, int] = collections.Counter(c.difficulty for c in cases)
+        print(f"Dimension distribution: {dict(dim_counts)}")
+        print(f"Difficulty distribution: {dict(diff_counts)}")
+
+        # Stress cases are all primary_dimension=data_preservation by design,
+        # so the multi-dimension coverage check from regular spreadsheet_clean
+        # does not apply. Validate only per-case integrity (parseability, row
+        # counts, no duplicate ids/inputs).
+        errors = _validate_stress_cases(cases)
+        if errors:
+            print("Validation errors:")
+            for e in errors:
+                print(f"  ERROR: {e}")
+            sys.exit(1)
+        else:
+            print("Stress-case validation passed.")
+
+        jsonl = cases_to_jsonl(cases)
+        output_path.write_text(jsonl, encoding="utf-8")
+        print(f"Wrote {len(cases)} stress cases → {output_path}")
+
+        if validate_against:
+            against_path = Path(validate_against)
+            if not against_path.exists():
+                print(f"--validate-against: file not found: {against_path}")
+                sys.exit(1)
+            other_records = load_jsonl(str(against_path))
+            new_records = load_jsonl(str(output_path))
+            overlap_errors = validate_no_overlap(new_records, other_records)
+            if overlap_errors:
+                print("Overlap validation errors:")
+                for e in overlap_errors:
+                    print(f"  ERROR: {e}")
+                sys.exit(1)
+            else:
+                print(f"No overlap with {validate_against}.")
+
     elif task == "doc_revision":
         print("doc_revision generation: STUB — not implemented in training cycle v0.")
         print("This task type requires an LLM judge for its key dimensions.")
@@ -324,7 +436,10 @@ def run(
 
     else:
         print(f"Unknown task type: {task!r}")
-        print("Supported: spreadsheet_clean, doc_revision (stub), citation_ground (stub)")
+        print(
+            "Supported: spreadsheet_clean, spreadsheet_clean_stress, "
+            "doc_revision (stub), citation_ground (stub)"
+        )
         sys.exit(1)
 
 
@@ -333,7 +448,12 @@ def main() -> None:
     parser.add_argument(
         "--task",
         required=True,
-        choices=["spreadsheet_clean", "doc_revision", "citation_ground"],
+        choices=[
+            "spreadsheet_clean",
+            "spreadsheet_clean_stress",
+            "doc_revision",
+            "citation_ground",
+        ],
         help="Task type to generate.",
     )
     parser.add_argument("--n", type=int, default=80, help="Number of cases to generate.")

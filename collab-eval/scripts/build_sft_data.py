@@ -25,12 +25,26 @@ SFT record schema:
     }
   }
 
+Inputs:
+  By default this script reads cases from BOTH the regular generator
+  (data/generated/spreadsheet_train_v1.jsonl, seed=100) AND the
+  preservation-stress generator (data/generated/spreadsheet_train_stress_v1.jsonl,
+  seed=400). Pass --inputs to override.
+
+Train/valid split (added in v1):
+  After concatenating all inputs, cases are sorted by case_id. Every 10th
+  case in the sorted order goes to valid.jsonl; the remainder goes to
+  train.jsonl. This is a deterministic 90/10 split with no per-run
+  randomness — re-running this script produces byte-identical files. Stress
+  cases (case_id prefix `sc_stress_`) interleave with regular cases (prefix
+  `sc_gen_`) in the sort, so both train and valid contain a mix.
+
 CLI:
-  --input    JSONL file of generated cases (from generate_tasks.py)
-             default: data/generated/spreadsheet_train_v1.jsonl
-  --output   JSONL file to write SFT records to
-             default: data/sft_collab_eval_full.jsonl
-  --limit    max records to emit (0 = no limit)
+  --inputs   one or more JSONL files of generated cases (comma-separated).
+             default: spreadsheet_train_v1.jsonl,spreadsheet_train_stress_v1.jsonl
+  --output-dir  directory to write train.jsonl and valid.jsonl
+                default: data/sft_collab_eval_full
+  --limit    max records to emit total (0 = no limit)
   --sample   if set, write <= 20 records to data/sft_collab_eval_sample.jsonl
 """
 
@@ -46,11 +60,15 @@ sys.path.insert(0, str(_ROOT))
 
 from collab_eval.generation.spreadsheet_generator import load_jsonl
 
-_DEFAULT_INPUT = str(_ROOT / "data" / "generated" / "spreadsheet_train_v1.jsonl")
-# MLX-LM expects a directory with train.jsonl, not a flat .jsonl file.
-_DEFAULT_OUTPUT = str(_ROOT / "data" / "sft_collab_eval_full" / "train.jsonl")
+_DEFAULT_INPUTS = [
+    str(_ROOT / "data" / "generated" / "spreadsheet_train_v1.jsonl"),
+    str(_ROOT / "data" / "generated" / "spreadsheet_train_stress_v1.jsonl"),
+]
+# MLX-LM expects a directory with train.jsonl and (optionally) valid.jsonl.
+_DEFAULT_OUTPUT_DIR = str(_ROOT / "data" / "sft_collab_eval_full")
 _SAMPLE_OUTPUT = _ROOT / "data" / "sft_collab_eval_sample.jsonl"
 _SAMPLE_SIZE = 20
+_VALID_FRACTION_DENOM = 10  # 1 in N goes to valid; 90/10 split when N=10
 
 SYSTEM_PROMPT = (
     "You are a data cleaning assistant. Given a messy CSV spreadsheet, produce a "
@@ -112,25 +130,63 @@ def _dataclass_to_dict(case) -> dict:
     return case
 
 
-def run(input_path: str, output_path: str, limit: int, write_sample: bool) -> None:
-    cases = load_jsonl(input_path)
-    if not cases:
-        print(f"No cases found in {input_path}")
-        print("Generate first: python scripts/generate_tasks.py --task spreadsheet_clean --n 240 --seed 100 --output data/generated/spreadsheet_train_v1.jsonl")
-        print("Then: python scripts/build_sft_data.py  (writes to data/sft_collab_eval_full/train.jsonl)")
-        sys.exit(1)
+def _split_train_valid(records: list[dict]) -> tuple[list[dict], list[dict]]:
+    """
+    Deterministic 90/10 split by case_id.
+
+    Sort all records by metadata.case_id, then take every Nth (N=10) into the
+    valid set; the rest go to train. Re-running with the same inputs produces
+    byte-identical splits.
+    """
+    sorted_records = sorted(records, key=lambda r: r["metadata"]["case_id"])
+    train: list[dict] = []
+    valid: list[dict] = []
+    for i, rec in enumerate(sorted_records):
+        if i % _VALID_FRACTION_DENOM == 0:
+            valid.append(rec)
+        else:
+            train.append(rec)
+    return train, valid
+
+
+def run(input_paths: list[str], output_dir: str, limit: int, write_sample: bool) -> None:
+    all_cases: list[dict] = []
+    for p in input_paths:
+        cases = load_jsonl(p)
+        if not cases:
+            print(f"No cases found in {p}")
+            print(
+                "Regenerate inputs first:\n"
+                "  python scripts/generate_tasks.py --task spreadsheet_clean "
+                "--n 240 --seed 100 --output data/generated/spreadsheet_train_v1.jsonl\n"
+                "  python scripts/generate_tasks.py --task spreadsheet_clean_stress "
+                "--n 80 --seed 400 --output "
+                "data/generated/spreadsheet_train_stress_v1.jsonl"
+            )
+            sys.exit(1)
+        all_cases.extend(cases)
+        print(f"Loaded {len(cases)} cases from {p}")
 
     if limit > 0:
-        cases = cases[:limit]
+        all_cases = all_cases[:limit]
 
-    records = [case_to_sft_record(c) for c in cases]
+    records = [case_to_sft_record(c) for c in all_cases]
 
-    out = Path(output_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", encoding="utf-8") as f:
-        for r in records:
+    train_records, valid_records = _split_train_valid(records)
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    train_path = out_dir / "train.jsonl"
+    valid_path = out_dir / "valid.jsonl"
+
+    with train_path.open("w", encoding="utf-8") as f:
+        for r in train_records:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    print(f"Wrote {len(records)} SFT records → {out}")
+    with valid_path.open("w", encoding="utf-8") as f:
+        for r in valid_records:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    print(f"Wrote {len(train_records)} records → {train_path}")
+    print(f"Wrote {len(valid_records)} records → {valid_path}")
 
     if write_sample:
         sample = records[:_SAMPLE_SIZE]
@@ -144,20 +200,22 @@ def run(input_path: str, output_path: str, limit: int, write_sample: bool) -> No
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build SFT training data from generated cases.")
     parser.add_argument(
-        "--input",
-        default=_DEFAULT_INPUT,
-        help=f"Input JSONL of generated cases (default: {_DEFAULT_INPUT})",
+        "--inputs",
+        default=",".join(_DEFAULT_INPUTS),
+        help=(
+            "Comma-separated JSONL inputs (default: regular train + stress train)"
+        ),
     )
     parser.add_argument(
-        "--output",
-        default=_DEFAULT_OUTPUT,
-        help=f"Output JSONL for SFT records (default: {_DEFAULT_OUTPUT})",
+        "--output-dir",
+        default=_DEFAULT_OUTPUT_DIR,
+        help=f"Output directory for train.jsonl + valid.jsonl (default: {_DEFAULT_OUTPUT_DIR})",
     )
     parser.add_argument(
         "--limit",
         type=int,
         default=0,
-        help="Max records to emit (default: 0 = no limit)",
+        help="Max records to emit total (default: 0 = no limit)",
     )
     parser.add_argument(
         "--sample",
@@ -165,9 +223,10 @@ def main() -> None:
         help=f"Also write the first {_SAMPLE_SIZE} records to {_SAMPLE_OUTPUT}.",
     )
     args = parser.parse_args()
+    input_paths = [p.strip() for p in args.inputs.split(",") if p.strip()]
     run(
-        input_path=args.input,
-        output_path=args.output,
+        input_paths=input_paths,
+        output_dir=args.output_dir,
         limit=args.limit,
         write_sample=args.sample,
     )
