@@ -1,0 +1,45 @@
+# SFT v2 config — collab-eval spreadsheet-cleaning
+# Base model: mlx-community/Qwen2.5-3B-Instruct-4bit
+#
+# v2 delta from v1: training data rebalanced to 50% stress (480 total = 240 regular
+# + 240 stress) to lift the v1 stress-eval data_preservation score from 0.25 → ≥0.85.
+# See docs/sft_v2_data_plan.md for the hypothesis. Recipe is unchanged from v1
+# except iters: 200 → 300 (matches v1's 2.5 epochs over the larger dataset) and
+# the cosine schedule + warmup are scaled accordingly.
+#
+# Promotion gate (unchanged from v1 — 5 conditions on the held-out splits):
+#   - composite_mean       >= base_composite - 0.005    (no regression)
+#   - data_preservation    >= base_data_preservation     (no regression)
+#   - rh_like_count        <= base_rh_like_count         (no increase)
+#   - one of {unit_consistency, format_validity, completeness} improves by >= 0.02
+#   - preservation-stress data_preservation_mean >= 0.85    (the v2 target)
+
+model: mlx-community/Qwen2.5-3B-Instruct-4bit
+data: data/sft_collab_eval_full_v2
+train: true
+test: false
+
+# LoRA adapter settings (unchanged from v1)
+num_layers: 16
+lora_parameters:
+  rank: 4
+  scale: 8.0
+  dropout: 0.05
+
+# Training hyperparameters
+batch_size: 4
+iters: 300
+steps_per_eval: 100
+save_every: 100
+learning_rate: 5.0e-5
+lr_schedule:
+  name: cosine_decay
+  warmup: 30
+  arguments: [5.0e-5, 300, 5.0e-7]
+grad_checkpoint: false
+
+# Output (parallel to v1)
+adapter_path: adapters/sft_collab_eval_qwen25_3b_v2/
+
+# Sequence length
+max_seq_length: 2048

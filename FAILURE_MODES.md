@@ -1,0 +1,231 @@
+# Failure modes — iris-ft-lab
+
+Consolidated catalog of the ML and tooling failures hit while building the Trace SFT/DPO and collab-eval SFT pipelines. One paragraph per mode: symptom, root cause, fix, where the evidence lives. The failures here are real — every entry was a session blocker that was diagnosed, fixed, and committed, not a hypothetical.
+
+This doc is mostly for the next person (or future you) walking into a similar bug. Read it before iterating on either pipeline.
+
+---
+
+## Index
+
+| # | Mode | Pipeline | Where it bit |
+|---|---|---|---|
+| 1 | Mode collapse during SFT | collab-eval | v0 training |
+| 2 | Fusion defect on quantized base | trace | DPO v0 training |
+| 3 | Stale weights glob conflict | trace | DPO v1 startup |
+| 4 | Unreachable promotion gate | collab-eval | v0 gate design |
+| 5 | Training-distribution asymmetry | collab-eval | v0 + v1 data |
+| 6 | DPO backend not in mlx-lm | trace | DPO Phase 1.3 |
+| 7 | Template-substitution glitches | trace | DPO Phase 2 |
+| 8 | Missing temp config in prompt | trace | DPO recovery Phase 4.1 |
+| 9 | Bash 10-min timeout < training duration | tooling | collab-eval v2 training |
+| 10 | Wall-time estimate ignored seq length | estimation | collab-eval v2 training |
+| 11 | Quantity rebalance failed where signal/gradient was bottleneck | collab-eval | v2 |
+
+Below: cross-cutting patterns that fall out of these.
+
+---
+
+## 1. Mode collapse during SFT — collab-eval v0
+
+**Symptom.** Adapter produced numerical convergence to repeated digits (`2444,1444`, `4444,4444`), year drift (`2024 → 2044 → 4444`), and literal token loops in some cases. Outputs *looked* like CSV (passing format_validity=1.0 and unit_consistency=1.0) but contained no real data. 88% of "missing" rows in RH-like cases were never produced — the model degenerated after the first few rows of generation.
+
+**Root cause.** Hyperparameter excess on a small dataset: rank=8, alpha=20 (effective scale 2.5), zero dropout, 1000 iters over 240 cases ≈ 16 epochs. The adapter had too many degrees of freedom and no regularization, drove itself into a degenerate region.
+
+**Fix.** Gentler recipe in v1: rank=4, scale=8.0 (= 2.0), dropout=0.05, iters=200, lr=5e-5 (was 1e-4), cosine schedule with warmup. Mode collapse went away.
+
+**Where.** `collab-eval/docs/sft_v1_failure_audit.md` "Real failure mode: adapter mode collapse"; `collab-eval/configs/sft_collab_eval_qwen25_3b.yaml` (the v1 recipe).
+
+---
+
+## 2. Fusion defect on quantized base — trace DPO v0
+
+**Symptom.** Fused-SFT baseline scored 0/12 instead of expected 9/12 — identical to the pre-SFT base behavior. The DPO adapter trained against this defective fused model produced clean training metrics (loss 0.693 → 0.001, val 0.002, margin 7.8) but was unusable.
+
+**Root cause.** `mlx_lm fuse` was called without `--dequantize` on a 4-bit quantized base. MLX cannot represent a float LoRA delta inside a packed 4-bit integer tensor; the fuse command ran to completion but the merged weights were byte-equivalent to the original quantized base (file size delta of 194 bytes — within tar/safetensors header rounding, vs the 26 MB adapter that should have been merged).
+
+**Fix.** Add `--dequantize` to the fuse command. The fused output is now ~6 GB float16 (vs the broken 1.6 GB 4-bit "fusion"). The §4.1 hard-stop rule (baseline ≠ 9/12 ± 1 → stop) caught this cleanly — without that floor, the eval would have run on a base-equivalent model, the DPO adapter would have looked broken for "DPO reasons," and we'd have iterated on hyperparameters chasing a phantom bug.
+
+**Where.** `eval/dpo_v0_results.md` "Fusion Defect — Root Cause Analysis"; `scripts/fuse_sft.py` (the `--dequantize` flag).
+
+---
+
+## 3. Stale `model.safetensors` glob conflict — trace DPO v1 startup
+
+**Symptom.** DPO training failed to start with a 506-parameter mismatch error.
+
+**Root cause.** `mlx_lm`'s weight discovery globs `model*.safetensors`. After re-fusing with `--dequantize`, the directory contained both the old 4-bit `model.safetensors` (from the defective v0 fuse) and new float16 shards (`model-00001-of-XXX.safetensors`, etc.). All three loaded simultaneously, producing conflicting quantization keys.
+
+**Fix.** Rename the stale 4-bit weight before training: `mv model.safetensors model.safetensors.defective_v0_bak`.
+
+**Where.** `eval/dpo_v1_training_notes.md` "Pre-training fix" section. This is the kind of bug that's invisible without the right log line; capture it because it'll bite again the first time someone re-fuses without cleaning up.
+
+---
+
+## 4. Unreachable promotion gate — collab-eval v0
+
+**Symptom.** Gate condition "composite improves by ≥ 0.10" was mathematically unreachable from a base composite of 0.9569 (max possible improvement = 0.0431). Even a perfect adapter would fail the gate. Discovered post-hoc when v0 was already trained.
+
+**Root cause.** Gate threshold designed in the abstract without checking against base-model evidence. The "+0.10" felt like a strong improvement target; nobody verified the ceiling.
+
+**Fix.** Replaced with a 5-condition no-regression-style gate (composite ≥ base − 0.005, dim no-regression, RH-like no-increase, one dim improves ≥ 0.02, stress data_preservation ≥ 0.85). The structural rule that fell out: **calibrate gates against base-model evidence before training.** If your base scores X, your gate's positive thresholds must be reachable from X without assuming a perfect ceiling.
+
+**Where.** `SFT_ANALYSIS.md` §2.2(2); `collab-eval/results/collab_sft_v0.md` "Note on the +0.10 gate"; `collab-eval/configs/sft_collab_eval_qwen25_3b.yaml` (the revised gate).
+
+---
+
+## 5. Training-distribution asymmetry — collab-eval v0 + v1
+
+**Symptom.** Even after the v1 mode-collapse fix, the adapter regressed on `data_preservation` (0.975 → 0.7500 in v0) and held flat (0.9750 → 0.9875) in v1, and the v1 stress-eval `data_preservation` came in at 0.25 vs the 0.85 gate.
+
+**Root cause.** The training data only ever rewarded row deletion or Notes stripping. Audit (`docs/sft_v1_data_audit.md`) counted 147 deletion events across 240 v1 training cases and **0 preserve-and-convert demonstrations**. Whenever the input contained a noisy row (blank, duplicate, annotation, fabricated, `; orig $X.XXXM` in Notes), the gold deleted or stripped. The model learned the dominant signal: "drop suspicious content." Not surprisingly, it generalized that to ambiguous unit-normalization rows in the held-out eval.
+
+**Fix.** Rebalance the training distribution by adding more preservation-stress cases (long tables where every row is real data and gold preserves all). v1 had 25% stress (80/320); v2 has 50% stress (240/480), dropping the deletion-event ratio from 61.2% to 30.6%. The v2 outcome will tell us whether 50% is enough.
+
+**Lesson.** **Audit your gold output before training.** What does the gold consistently teach? In tasks with noise/cleanup tradeoffs, "gold strips X" and "gold preserves X" are different policies — and the gold's distribution of those decisions is what the model learns, regardless of what the prompt asks for.
+
+**Where.** `collab-eval/docs/sft_v1_data_audit.md`, `sft_v1_failure_audit.md`, `sft_v2_data_plan.md`, `sft_v2_data_audit.md`. Audit script: `collab-eval/docs/audits/audit_gold_v1.py` (and v2 variant).
+
+---
+
+## 6. DPO backend not in mlx-lm — trace DPO Phase 1.3
+
+**Symptom.** `python scripts/train_dpo.py --check-only` reported `DPO trainer not found in mlx-lm 0.31.3`. Neither `mlx_lm.tuner.dpo_trainer.DPOTrainer` (ImportError) nor a `--dpo` flag on `mlx_lm.lora` was present. Hard stop at Phase 1.3.
+
+**Root cause.** Official `mlx-lm` (v0.31.3, current at the time) does not expose DPO training. The original DPO scaffold was written assuming MLX would land DPO support; it didn't.
+
+**Fix.** Switch the DPO backend to **`mlx-lm-lora`** v2.1.0 (third-party, by Goekdeniz-Guelmez, on PyPI). CLI: `mlx_lm_lora.train --train-mode dpo`. Data format `{"prompt", "chosen", "rejected"}` matches what the existing trace generator already produces — no Phase 2 data rework was needed. Documented in `data/dpo_design_notes.md` §5.
+
+**Lesson.** Don't assume framework-level features will land on your timeline. When a feature is "evolving" or "expected soon," a community fork that already has it is often the right unblock.
+
+**Where.** `data/dpo_design_notes.md` §5; `scripts/train_dpo.py` (updated dispatcher); `configs/dpo_trace_qwen25_3b.yaml` (mlx-lm-lora-shaped config).
+
+---
+
+## 7. Template-substitution glitches in synthetic data — trace DPO Phase 2
+
+**Symptom.** Two records out of 80 in the DPO preference set had ungrammatical `stated_intent` strings:
+- `dpo_add__022`: `"Restart morning routine routine."` (duplicated word)
+- `dpo_add__023`: `"Stop under-charge for my work through deliberate practice."` (ungrammatical compound)
+
+Both were *plausibly wrong* in the policy sense (advice-fabricating rejected outputs) but the grammatical artifacts gave DPO a "prefer grammatical" gradient on those two cases that wasn't the policy axis we wanted to teach.
+
+**Root cause.** Generator templates combined lexicon entries and format strings without checking for grammatical agreement. The lexicon entry "morning routine" plugged into `f"Restart {activity} routine."` yielded the duplicated word. The verb "under-charge" plugged into `f"Stop {behavior} for my work..."` yielded ungrammatical English.
+
+**Fix.** Lexicon-level adjustment: change `"morning routine"` to `"morning"` and rework the second template to use a noun form. Both were 1–3 line changes; the rest of Phase 2's 78/80 records were already clean.
+
+**Lesson.** When generating synthetic preference data, **scan the rejected outputs for surface artifacts** before training. Bad pairs aren't just "wrong policy" — grammar/length/punctuation differences become free training signals that the policy axis didn't intend.
+
+**Where.** `scripts/generate_synthetic_dpo.py` (post-fix); commit `7bc6676`.
+
+---
+
+## 8. Missing temp config in prompt — trace DPO recovery Phase 4.1
+
+**Symptom.** During the DPO v1 recovery run, `eval_extraction.py` failed with `FileNotFoundError: configs/eval_baseline_fused.yaml`. The user had executed Phase 1–3 manually, then ran the §4.1 baseline eval verbatim from the prompt and hit the missing file.
+
+**Root cause.** The prompt described the temp config's contents in a fenced YAML block but didn't include an explicit "create this file" step. The previous Sonnet session that ran §3 may have created it implicitly; when the user re-ran §4.1 manually, the file didn't exist.
+
+**Fix.** Use `configs/dpo_trace_qwen25_3b.yaml` directly. `eval_extraction.py` only reads `config["model"]["path"]`, and the DPO config already has the right value. No temp config is needed at all.
+
+**Lesson.** **Prompts should not assume side effects from earlier prompt sections.** If a step depends on a file existing, either the prompt creates it explicitly or the prompt uses an existing file. "Create this YAML in your head and then run this command" is brittle; an executor reading the prompt linearly may skip the implicit step.
+
+**Where.** `TRACE_DPO_V1_RECOVERY_PROMPT.md` §"Background" notes the immediate operator error; the recovery used the existing config directly.
+
+---
+
+## 9. Bash 10-min timeout < training duration — collab-eval v2 training
+
+**Symptom.** During SFT v2 (300 iters on M-series Mac), the Bash command running training hit Claude Code's 10-minute Bash ceiling. On the first attempt the harness returned, Sonnet interpreted the return as "training completed" and started running eval on a partial adapter checkpoint. On the recovery attempt Sonnet tried `sleep 90 && tail -30 …` to wait between checks; the harness blocked the chained sleep with a specific guidance error.
+
+**Root cause.** Two-layer mismatch: (a) Bash tool's max timeout is 10 minutes by harness design; (b) the training command's actual runtime exceeded it. The training process either continued running orphaned in the background, or was killed; either way the harness lost visibility.
+
+**Fix (the pattern that works).** Two harness affordances combine cleanly:
+1. Run training in the background: `Bash(..., run_in_background: true)`. Returns immediately; the process runs to completion in its own context, no tool-call timeout applies.
+2. Poll for milestones with `until` loops: `until grep -q "Iter 100:" <logfile>; do sleep 10; done`, also run with `run_in_background: true`. The harness fires a notification when the until-loop exits, so the assistant wakes up at each milestone without burning context on idle waiting.
+
+What does NOT work: `sleep N && <command>` chains in foreground. The harness explicitly blocks long leading sleeps with a guidance error pointing at exactly the pattern above. Don't fight it.
+
+**Lesson.** **Tool-call timeouts are a recipe parameter.** Any training run that can take > 10 min must use `run_in_background`, and milestone checks must use until-loops, not chained sleeps. Document expected wall time in the prompt — v2 was claimed at "~10–15 min on M-series"; actual was ~75 min (see Mode 10).
+
+**Where.** This conversation; collab-eval v2 training run logs; pattern is in Sonnet's recovery polling.
+
+---
+
+## 10. Wall-time estimate ignored seq length — collab-eval v2
+
+**Symptom.** Phase 3-4 prompt estimated SFT v2 wall time at "~10–15 min on M-series Mac." Actual run was ~75 min — 5× the estimate. Per-iter time was ~15 sec/iter, vs v1's ~2.4 sec/iter on the same hardware and recipe.
+
+**Root cause.** Wall-time estimate scaled linearly with iter count and dataset size, but ignored sequence length. v2's training data is 50% stress cases (long tables, 15–25 rows), pushing the average tokens-per-example near `max_seq_length: 2048`. v1's regular cases averaged 6–18 rows = 500–800 tokens — a quarter of the context. With everything else equal, per-iter compute scales roughly with seq length, and v2's avg seq length is ~3-4× v1's.
+
+**Fix.** When estimating training wall time, scale by `iters × avg_tokens_per_example`, not just `iters`. Or measure: run a 10-iter smoke first, divide by 10, multiply by total iters and add 20% buffer. The 5-iter smoke run already in the v2 prompt would have surfaced this if the prompt had said "use the smoke run wall time × 60 to estimate the full run."
+
+**Lesson.** **Per-iter time is dominated by per-example seq length.** When training data composition shifts toward longer examples (stress cases, longer documents, full-context examples), redo the wall-time math. Don't extrapolate from a previous run that used shorter examples.
+
+**Where.** This conversation; v2 prompt's "~10–15 min" claim was wrong; actual ~75 min for 300 iters at ~1500–2000 tokens/example.
+
+---
+
+## 11. Quantity rebalance failed where signal/gradient structure was the bottleneck — collab-eval v2
+
+**Symptom.** v1 had 25% stress training cases and stress `data_preservation` came in at
+0.25 (vs the 0.85 gate). v2 tripled the stress count (80 → 240), reaching 50% stress
+proportion, with the stated hypothesis that more preservation demonstrations would lift
+the score. v2 stress `data_preservation` was identical to v1: 0.25. Zero movement.
+
+**Root cause.** The v2 hypothesis ("quantity is the bottleneck") was wrong. The flat
+trajectory across two experiments rules out quantity as the dominant cause. The model
+learned the unit-conversion signal from stress data perfectly (stress unit_consistency
+went 0.70 → 1.00 in both v1 and v2), so the stress demonstrations *are* being absorbed —
+but only the gradient-friendly signals. Two more plausible hypotheses now: (H2) gradient
+competition between stress's "preserve" and regular's "delete-on-noise" gradients within
+mixed-batch steps; (H3) signal asymmetry — "don't drop a row" is a harder positive
+demonstration than "convert X to Y" because the action space includes all possible
+deletions and the gold doesn't show every preservation decision explicitly.
+
+**Fix.** Don't iterate on quantity. v3 will test curriculum learning (separates the
+gradient phases) as a cheap H2 test. If curriculum also produces no movement, H3 is
+confirmed and the next instrument is DPO-on-preservation pairs, not more SFT data.
+
+**Lesson.** **When a quantity rebalance produces zero movement on a target metric while
+co-resident metrics improve, the bottleneck is structural, not quantitative.** Don't run
+v3 with the same instrument as v2; switch instruments. The "zero movement" is the
+informative signal — partial movement would have justified more rebalance, but flat
+movement says "this knob doesn't control this dimension."
+
+**Where.** `collab-eval/results/collab_sft_v2.md` "Hypothesis test" + "Likely next stage"
+sections; `collab-eval/results/collab_sft_v1.md` for the v1 baseline this is compared
+against.
+
+---
+
+## Cross-cutting patterns
+
+A few rules of thumb that fall out of the above modes. Worth applying as a pre-flight checklist before any new SFT/DPO run.
+
+**Audit data before training.** What does the gold consistently teach? Run a small script that classifies what the gold *does* on each input pattern (deletes, preserves, converts, etc.). If the gold's policy distribution is one-sided in a way the eval doesn't fully test, your model will overfit that policy and the eval won't catch it. Modes 1 and 5 both stem from skipping this.
+
+**Calibrate gates against base-model evidence.** Before declaring promotion thresholds, run baseline eval and compute "what's the maximum improvement reachable from here?" If your gate exceeds that, the gate is unreachable on its face. Mode 4.
+
+**Beware silent transformations on quantized weights.** `mlx_lm fuse` on 4-bit base is a no-op. By analogy, watch for any operation that mixes precision tiers (4-bit + float16, fp8 activations + fp16 weights) and confirm the output via spot-check eval, not just file-size or no-error-thrown signals. Modes 2 and 3.
+
+**A tool-call timeout is a recipe parameter.** If your training command can take longer than the harness's tool timeout, run it in the background and poll for milestones with `until` loops. Don't chain sleeps; the harness blocks them. Mode 9.
+
+**Wall-time estimates must scale with seq length, not just iters.** When training data shifts toward longer examples (long tables, full-context documents), per-iter compute grows roughly linearly with avg tokens-per-example. Either compute `iters × avg_tokens` or measure via a smoke run; don't extrapolate from a previous run with shorter examples. Mode 10.
+
+**Adapter-stacking strategy matters as much as hyperparameters.** Strategy 1 (fuse SFT, fresh LoRA on top, both `--model` and `--reference-model-path` = fused) vs Strategy 2 (resume LoRA on top of base, `--reference-model-path` = base) have completely different KL-anchoring behavior. Strategy 2 with `reference=base` actively undoes SFT's gains. Pick Strategy 1 unless you have specific evidence the other works in your tooling. See trace DPO `dpo_design_notes.md` §5 and Strategy 1/2 discussion.
+
+**Synthetic preference data needs surface-level QA, not just policy-level QA.** Validators check JSON parse + schema; they don't check grammar, repeated words, or coincident formatting differences between chosen and rejected. Add a pass that scans rejected outputs for cosmetic artifacts. Mode 7.
+
+**Bucket A/B/C verdicts beat binary PROMOTED/NOT-PROMOTED.** Three-bucket classification ("PROMOTED" / "NOT PROMOTED with progress" / "NOT PROMOTED with concern") lets you document forward motion without shipping unsuitable adapters. This is the antidote to gate-creep — when v2 doesn't quite hit the gate but lifts the failing dimension by 0.4, you can record that as Bucket B and plan v3 with evidence, instead of being tempted to lower the gate. (Used in collab-eval v2 prompt; not yet a failure but a documented antipattern avoided.)
+
+---
+
+## Known gaps (intentional, not failures)
+
+These are scoped-out work items the team decided not to do for legitimate reasons. Listed here so they're not mistaken for unfinished failures.
+
+- **Voice eval for trace DPO.** Family B in the DPO training data targets coaching/advice behavior, but the Phase 4 eval was tier-only. Building a 10-case voice keyword eval (~1 hour) would close the loop. Skipped because trace already promoted at 12/12 on tier accuracy and there's no immediate downstream consumer.
+- **Cross-project SFT/DPO infra refactor.** A shared `iris_ft_lab/training/` package was scoped in `SFT_ANALYSIS.md` §5 but deferred until both pipelines have shipped successful runs. As of v2 in flight, only trace has shipped (SFT + DPO); collab-eval v2 outcome will trigger this decision.
+- **CI / test coverage for trace pipeline.** collab-eval has 206 tests; trace has none for the new DPO scaffolding (`fuse_sft.py`, `generate_synthetic_dpo.py`, `validate_dpo_data.py`). Acceptable for now because the artifacts are stable and the validators run inline at generation time.
+- **ORPO / GRPO experimentation on collab-eval.** mlx-lm-lora supports both. If collab-eval v2 doesn't promote, ORPO (single-model, no reference) is a reasonable next instrument to try. Currently out of scope.

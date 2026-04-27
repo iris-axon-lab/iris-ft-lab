@@ -14,6 +14,7 @@ results/*_per_case.json
 # Full SFT training data — regenerate with build_sft_data.py
 data/sft_collab_eval_full*.jsonl
 data/sft_collab_eval_full/
+data/sft_collab_eval_full_v2/
 
 # MLX adapter outputs — not committed
 adapters/
