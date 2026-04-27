@@ -590,7 +590,7 @@ def _b_episodic_struggle(rng: random.Random, seed: int, idx: int) -> dict:
         ("workout", "missed another workout this week. Third week in a row now",
          "Keep telling myself it's because of the project crunch, but I know I'm also avoiding it",
          "health / exercise"),
-        ("morning routine", "skipped the morning routine again today",
+        ("morning", "skipped the morning routine again today",
          "Each time I tell myself it's just one day off but the streak is broken",
          "habits / routines"),
         ("journaling", "missed journaling for the fifth day running",
@@ -628,11 +628,11 @@ def _b_episodic_struggle(rng: random.Random, seed: int, idx: int) -> dict:
 
 
 def _b_semantic_pattern(rng: random.Random, seed: int, idx: int) -> dict:
-    pattern, topic = rng.choice([
-        ("over-explain when I'm uncertain", "self-knowledge / communication"),
-        ("avoid conflict until it accumulates", "self-knowledge / conflict"),
-        ("under-charge for my work", "self-knowledge / pricing"),
-        ("say yes to too many small requests", "self-knowledge / boundaries"),
+    pattern, pattern_noun, topic = rng.choice([
+        ("over-explain when I'm uncertain", "over-explaining when uncertain", "self-knowledge / communication"),
+        ("avoid conflict until it accumulates", "avoiding conflict until it accumulates", "self-knowledge / conflict"),
+        ("under-charge for my work", "under-charging for my work", "self-knowledge / pricing"),
+        ("say yes to too many small requests", "saying yes to too many small requests", "self-knowledge / boundaries"),
     ])
     user_input = (
         f"I've noticed I {pattern}. It's a long-running pattern. "
@@ -657,7 +657,7 @@ def _b_semantic_pattern(rng: random.Random, seed: int, idx: int) -> dict:
             f"Self-pattern: tendency to {pattern}. To break this, consider deliberate practice "
             f"and accountability check-ins; a coach or therapist may help convert awareness into change."
         ),
-        intent=f"Stop {pattern} through deliberate practice.",
+        intent=f"Address my pattern of {pattern_noun} through deliberate practice.",
         valence="neutral",
         topic=topic,
         timestamp=ts, source_id=sid, channel="personal",
