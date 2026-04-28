@@ -1,8 +1,75 @@
 # Failure modes — iris-ft-lab
 
-Consolidated catalog of the ML and tooling failures hit while building the Trace SFT/DPO and collab-eval SFT pipelines. One paragraph per mode: symptom, root cause, fix, where the evidence lives. The failures here are real — every entry was a session blocker that was diagnosed, fixed, and committed, not a hypothetical.
+Consolidated catalog of the ML and tooling failures hit while building the Trace SFT/DPO and collab-eval SFT/DPO pipelines. One paragraph per mode: symptom, root cause, fix, where the evidence lives. The failures here are real — every entry was a session blocker that was diagnosed, fixed, and committed, not a hypothetical.
 
-This doc is mostly for the next person (or future you) walking into a similar bug. Read it before iterating on either pipeline.
+This doc is mostly for the next person (or future you) walking into a similar bug. Read it before iterating on either pipeline. Start with the **"Three dimensions: Knowing, Doing, Deciding"** section below — it maps the 15 modes into three failure classes with different remedies, so you can orient quickly before reading individual entries.
+
+---
+
+## Three dimensions: Knowing, Doing, Deciding
+
+The 15 modes below fall into three distinct failure classes. Recognizing the class before debugging is important: the remedies are structurally different.
+
+**Knowing** — The model's learned representation is wrong or corrupted. The problem is in what the model ended up knowing after training, or in the data and infrastructure that shaped it. Fix: find the corruption source (data, recipe, or weight-level defect) and retrain from a clean state.
+
+**Doing** — The execution layer failed. The problem is in the tooling, harness, or framework that surrounds training. The model itself is fine; the run was misconfigured, timed out, or used an API incorrectly. Fix: find the tooling constraint, fix the scaffold, re-run. No gradient information is lost.
+
+**Deciding** — The policy layer failed. Either the trained model is making the wrong generation-time decision (inference-time policy failure), or the practitioner made the wrong instrument selection decision (meta-level policy failure). This class is the hardest: the training ran correctly, the tooling worked, but the choice of what to train or how to measure it was wrong. Fix: change the instrument or supervision signal — more of the same will not help.
+
+---
+
+### K — Knowing failures (Modes 1, 2, 3, 5, 7, 11)
+
+| Sub-class | Description | Modes |
+|---|---|---|
+| K1 — Recipe / data quality | Hyperparameters, data imbalance, or template errors corrupt what the model learns | 1, 5, 7 |
+| K2 — Infrastructure corrupts trained weights | The run completes cleanly; the artifact is silently wrong | 2, 3 |
+| K3 — Signal ceiling | Data and recipe are correct, but the training signal cannot carry the required information | 11 |
+
+**Canonical K2 example — Mode 2 (fusion defect):** `mlx_lm fuse` without `--dequantize` completed without error, produced a same-size output, and logged nothing anomalous. The fused weights were byte-equivalent to the original 4-bit base. The defect was invisible until the downstream eval scored 0/12 instead of expected 9/12. Lesson: verify the fused artifact size, not just the exit code.
+
+**How eval tightened against K:** The Mode 2 experience added the hard-stop rule — baseline eval must score within ±1 of expected before any adapter eval runs. K3 (Mode 11) added the signal-ceiling check: if doubling data doesn't move the metric, stop iterating on data quantity and diagnose the gradient.
+
+**Training-process impact:** K failures are often invisible at training time (the loss curve looks normal). The promotion gate is the first place they surface. This is why a well-calibrated gate matters more than clean training logs.
+
+---
+
+### D — Doing failures (Modes 9, 10, 12)
+
+| Sub-class | Description | Modes |
+|---|---|---|
+| D1 — Harness / tooling constraints underestimated | The run infrastructure has limits that weren't accounted for | 9, 10 |
+| D2 — Framework API misuse | A framework config field does something other than expected | 12 |
+
+**Canonical D example — Mode 9 (Bash timeout):** The Bash tool has a 10-minute hard timeout; a 23-minute training run must be backgrounded and polled. The first collab-eval v2 training run was issued as a foreground command and silently killed mid-training. Lesson: any training run > 5 minutes must use `run_in_background` + until-loop polling.
+
+**Pattern:** D failures are almost always fixable without retraining — they're about the scaffold, not the model. If the training run was killed, re-run it. If the config field did the wrong thing, fix the config.
+
+---
+
+### Dc — Deciding failures (Modes 4, 6, 8, 13, 14, 15)
+
+| Sub-class | Description | Modes |
+|---|---|---|
+| Dc1 — Gate / promotion design | The success criterion was wrong before training started | 4 |
+| Dc2 — Instrument selection | The chosen training method cannot, in principle, learn the target behavior | 6, 8, 13, 14 |
+| Dc3 — Cumulative exhaustion | Multiple instruments have been tried; the trajectory itself is the signal | 15 |
+
+**Canonical Dc3 example — Mode 15 (both instruments exhausted):** Three SFT configs (recipe, quantity, curriculum) and one DPO run all produced 0.20–0.25 stress `data_preservation`. Each individual run could have been attributed to a specific hyperparameter. The trajectory across all five runs cannot — it points at a structural property of the supervision signal, not a tunable parameter. Lesson: when two instrument families have been exhausted on the same target, the problem is in the instrument class, not the instance.
+
+**How eval tightened against Dc:** The stress eval (gate condition 5) was added specifically to catch Dc2 failures — an adapter that looks fine on regular eval but fails on the target behavior. Without gate condition 5, SFT v1 (composite +0.039, unit_consistency +0.138) would have been promoted despite 0.25 stress preservation.
+
+**The 6/3/6 split observation:** Knowing and Deciding have 6 modes each; Doing has only 3. This reflects where the real cost lies in an ML project: failures of representation and instrument selection compound across sessions; tooling failures are usually one-session blockers. The Deciding class is also harder to detect — a D failure usually announces itself (training crashed, timeout error), while a Dc failure only becomes visible when the eval results are in.
+
+---
+
+### Pre-flight checklist
+
+Three questions to ask before starting a new training run:
+
+- **K:** Is the artifact I'm training from clean? (Verify fused model size; check training data for template errors; confirm the recipe hasn't over-parameterized for dataset size.)
+- **D:** Is the scaffold set up correctly? (Background command? Polling loop? Framework API used as documented?)
+- **Dc:** Is this the right instrument for the target behavior? (What does the supervision signal reward? Is there a ceiling I'm about to hit? Has a previous run already hit it?)
 
 ---
 

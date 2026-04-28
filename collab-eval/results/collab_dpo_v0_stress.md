@@ -1,3 +1,9 @@
+# collab-eval DPO v0 — stress eval (preserve-vs-drop)
+
+This file is the standalone stress-set eval for the DPO v0 adapter. The first generated section below is labeled `## SFT Eval v1` because the shared eval script emits that header; interpret it as "DPO v0 stress eval." The "Gate: FAIL — gate condition 5 not evaluated" line further down is expected for a standalone stress run; the chained promotion verdict that combines stress + regular evals lives in [`collab_dpo_v0.md`](collab_dpo_v0.md).
+
+---
+
 ## SFT Eval v1
 
 **Base model:** mlx-community/Qwen2.5-3B-Instruct-4bit

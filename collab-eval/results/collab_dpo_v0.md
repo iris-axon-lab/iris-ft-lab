@@ -1,3 +1,9 @@
+# collab-eval DPO v0 — preserve-vs-drop preference learning
+
+This report documents the DPO v0 adapter eval. The first generated section below is labeled `## SFT Eval v1` because the shared eval script (`eval/run_collab_model_eval.py`) emits that header for any adapter; interpret the legacy label as "adapter eval" — it is the DPO v0 adapter being evaluated, not an SFT v1 adapter. The authoritative DPO verdict (with bucket classification, hypothesis test, and root cause) starts in the **`v0 Verdict`** section below the metric tables.
+
+---
+
 ## SFT Eval v1
 
 **Base model:** mlx-community/Qwen2.5-3B-Instruct-4bit

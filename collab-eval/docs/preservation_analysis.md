@@ -111,8 +111,7 @@ Concretely for v5:
 - **Risk:** rollout cost is 10–50× per training step vs DPO. Reward hacking via row
   duplication is a real risk and needs the explicit penalty.
 
-The full v5 prompt is **not** drafted in this cycle. The cleanup commit captures the
-analysis that motivates v5; the prompt itself is a separate session.
+The v5 prompt (RL with grader) is intentionally left out of scope for this session. The analysis above is the motivation document; the design will be drafted in a dedicated session.
 
 ## What this trajectory tells us about the harness
 

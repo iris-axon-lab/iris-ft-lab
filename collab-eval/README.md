@@ -1,5 +1,7 @@
 # collab-eval
 
+> **Current status (2026-04-27):** Five experiments run (SFT v0–v3 + DPO v0); none promoted. Two instrument families exhausted (SFT positive demonstrations, DPO preference learning). Next candidate: RL with grader as reward. See §4–§8 for the full experiment log.
+
 A task environment and grader harness for open-ended document manipulation tasks,
 built to make reward design explicit. The core problem: document tasks have no binary
 oracle, so naive reward functions get gamed. This harness addresses that with decomposed
@@ -317,7 +319,7 @@ See [`results/model_baseline_v0.md`](results/model_baseline_v0.md) for full per-
 
 **What it adds:** Infrastructure for SFT training — train/held-out data splits,
 SFT record builder, training config, and a training script with `--dry-run` /
-`--check-only` modes. No training has been run.
+`--check-only` modes. **Historical note:** training has since been run — see §4–§8 for the SFT v0–v3 and DPO v0 results.
 
 **How to build SFT data:**
 
@@ -565,7 +567,7 @@ demonstration. The collab-eval generator already produces stress cases (long tab
 preserves all rows); building preference pairs is one new generator + a DPO training step on
 top of v3 (or directly on top of base, since the SFT-acquired schema is intact).
 
-The full v4 prompt and design is queued for a separate session — not started here.
+DPO v0 ran in the next session — see §8 for the full design and results.
 
 #### Reproducibility
 
@@ -647,7 +649,7 @@ penalty term for row duplication, KL-anchored at v3 SFT. See
 [`docs/preservation_analysis.md`](docs/preservation_analysis.md) "What's a viable next
 step" section for the full rationale.
 
-The full v5 prompt is queued for a separate session.
+The v5 prompt (RL with grader) is intentionally left out of scope for this session — it will require a dedicated design session.
 
 #### Reproducibility
 
