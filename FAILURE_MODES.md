@@ -21,6 +21,8 @@ This doc is mostly for the next person (or future you) walking into a similar bu
 | 9 | Bash 10-min timeout < training duration | tooling | collab-eval v2 training |
 | 10 | Wall-time estimate ignored seq length | estimation | collab-eval v2 training |
 | 11 | Quantity rebalance failed where signal/gradient was bottleneck | collab-eval | v2 |
+| 12 | mlx-lm `adapter_path` is save-only, not load-on-resume | tooling | collab-eval v3 phase 2 |
+| 13 | SFT instrument exhausted for absence-of-action signals | collab-eval | v1+v2+v3 trajectory |
 
 Below: cross-cutting patterns that fall out of these.
 
@@ -199,6 +201,79 @@ against.
 
 ---
 
+## 12. `adapter_path` is save-only — to resume, use `resume_adapter_file` — collab-eval v3 phase 2
+
+**Symptom.** v3 curriculum required phase 2 to resume from phase 1's final adapter
+checkpoint (the whole point of the curriculum is for phase 2 to refine phase 1's
+preservation gains, not start fresh). The phase 2 config set `adapter_path:
+adapters/sft_collab_eval_qwen25_3b_v3/` with the phase-1 final adapter copied into that
+directory; the expectation was that mlx-lm would load existing weights from there as
+training-init. It didn't. Phase 2's iter-1 train loss was ~1.0 — same as a fresh start
+on mixed data. Phase 1 weights were not loaded.
+
+**Root cause.** mlx-lm's `adapter_path` config field is the *output* path for new
+checkpoints; it does not control loading. To resume from existing weights, you must set
+the separate `resume_adapter_file` field pointing at a specific safetensors file. The
+two fields are independent: `adapter_path` says "write here", `resume_adapter_file` says
+"start from here". Setting only `adapter_path` to a directory containing existing
+checkpoints does not auto-load them.
+
+**Fix.** Add `resume_adapter_file: <path-to-final-safetensors>` to the phase 2 config.
+Verify the resume worked by checking phase 2's iter-1 val loss: should be substantially
+below a fresh-start val loss for the same data (in v3, phase 2 iter-1 val was 0.388 with
+resume, vs 1.109 for fresh start — clear confirmation).
+
+**Lesson.** **The save vs load distinction in mlx-lm is silent until phase 2 starts from
+random init.** A two-phase curriculum that fails to resume is effectively a single longer
+phase on the second-phase data — different experiment, easy to mistake for "curriculum
+didn't help" when actually the curriculum never ran. Always verify resume by inspecting
+iter-1 train/val loss against the fresh-start baseline. The diagnostic in v3's phase 2
+training notes is what caught this.
+
+**Where.** `collab-eval/results/collab_sft_v3_phase2_train_notes.md` "Bug discovered
+during run" section; `collab-eval/configs/sft_collab_eval_qwen25_3b_v3_phase2.yaml` (the
+fixed config with `resume_adapter_file`).
+
+---
+
+## 13. SFT instrument exhausted for absence-of-action signals — collab-eval v1+v2+v3
+
+**Symptom.** Across three SFT experiments — v1 (gentler recipe + 25% stress data), v2
+(50% stress data, same recipe), v3 (curriculum: stress-only phase 1, then mixed phase 2
+at lower LR) — stress `data_preservation` was 0.25 in every case. Three distinct
+interventions touching three different parametric axes (recipe, quantity, ordering),
+identical outcome. Co-located metrics on the same eval moved cleanly in every run
+(stress `unit_consistency` 0.70 → 1.00 in all three).
+
+**Root cause.** Preservation is an **absence-of-action policy**: "don't drop this row."
+SFT learns from positive demonstrations (gold outputs); it has no mechanism to teach
+"don't drop this row" except through what the gold does. When the gold contains a
+preserved row, the model learns the surface form (this row appears in gold) but not the
+policy decision (whether to drop on uncertainty). Positive signals like unit conversion
+("convert this $M cell to $K") and header preservation ("output these column names")
+transfer cleanly because they ARE positive demonstrations — the gold token sequence
+literally exhibits the desired action. Preservation has no equivalent literal signal;
+the desired action is the absence of a deletion the model would otherwise produce.
+
+**Fix.** Not an SFT fix. The right instrument for absence-of-action policies is
+preference learning (DPO/ORPO/KTO), where the discriminative signal "this output is
+better than this other output" can directly express "preserve > drop" without requiring
+the gold to demonstrate every preservation decision. The DPO loss compares two outputs
+on the same input — exactly the comparison preservation requires.
+
+**Lesson.** **A flat metric across multiple varied interventions = wrong instrument.**
+When v1, v2, and v3 all produced 0.25 stress `data_preservation` despite varying recipe,
+quantity, and ordering, the bottleneck is structural (instrument-fit), not parametric
+(recipe). Three flat data points across three different interventions = SFT not the
+right tool. Switch instruments before iterating further. This is the most efficient
+possible negative result: each iteration gathered evidence that ruled out one hypothesis,
+and the cumulative trajectory pointed cleanly at the next instrument.
+
+**Where.** `collab-eval/results/collab_sft_v1.md`, `collab_sft_v2.md`, `collab_sft_v3.md`
+(the three flat data points); `collab-eval/README.md` §4–§7 (the cumulative narrative).
+
+---
+
 ## Cross-cutting patterns
 
 A few rules of thumb that fall out of the above modes. Worth applying as a pre-flight checklist before any new SFT/DPO run.
@@ -216,6 +291,16 @@ A few rules of thumb that fall out of the above modes. Worth applying as a pre-f
 **Adapter-stacking strategy matters as much as hyperparameters.** Strategy 1 (fuse SFT, fresh LoRA on top, both `--model` and `--reference-model-path` = fused) vs Strategy 2 (resume LoRA on top of base, `--reference-model-path` = base) have completely different KL-anchoring behavior. Strategy 2 with `reference=base` actively undoes SFT's gains. Pick Strategy 1 unless you have specific evidence the other works in your tooling. See trace DPO `dpo_design_notes.md` §5 and Strategy 1/2 discussion.
 
 **Synthetic preference data needs surface-level QA, not just policy-level QA.** Validators check JSON parse + schema; they don't check grammar, repeated words, or coincident formatting differences between chosen and rejected. Add a pass that scans rejected outputs for cosmetic artifacts. Mode 7.
+
+**`adapter_path` in mlx-lm is save-only — to resume, set `resume_adapter_file` explicitly.**
+The save vs load distinction is invisible until phase 2 starts from random init. Always
+verify resume by inspecting iter-1 train/val loss against the fresh-start baseline. Mode 12.
+
+**A flat metric across multiple varied interventions = wrong instrument.** When three
+SFT iterations vary recipe, quantity, and ordering and produce identical results on a
+target dimension, the bottleneck is structural not parametric. Three flat data points
+is your signal to switch instruments (SFT → DPO/ORPO/PPO), not to iterate on the same
+one with finer granularity. Mode 13.
 
 **Bucket A/B/C verdicts beat binary PROMOTED/NOT-PROMOTED.** Three-bucket classification ("PROMOTED" / "NOT PROMOTED with progress" / "NOT PROMOTED with concern") lets you document forward motion without shipping unsuitable adapters. This is the antidote to gate-creep — when v2 doesn't quite hit the gate but lifts the failing dimension by 0.4, you can record that as Bucket B and plan v3 with evidence, instead of being tempted to lower the gate. (Used in collab-eval v2 prompt; not yet a failure but a documented antipattern avoided.)
 
