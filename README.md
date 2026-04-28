@@ -161,15 +161,19 @@ make validate-results       # checks all artifacts exist and paths are consisten
 
 ## Eval Snapshot — collab-eval (document tasks)
 
-> **Three SFT attempts; none promoted.** v0 mode-collapsed; v1 hardened recipe but stress
-> preservation flat at 0.25; v2 doubled stress data, still flat at 0.25; v3 ran two-phase
-> curriculum (stress-only first, then mixed at lower LR), still flat at 0.25 — three
-> different interventions, identical outcome. The flat trajectory rules out two
-> SFT-shaped hypotheses (data quantity, gradient competition) and confirms signal
-> asymmetry: SFT cannot teach absence-of-action policies through positive demonstrations.
-> Next experimental candidate is **DPO-on-preservation** — see
-> [`collab-eval/results/collab_sft_v3.md`](collab-eval/results/collab_sft_v3.md) and
-> the "What's next" pointer in [`collab-eval/README.md`](collab-eval/README.md) §7.
+> **Three SFT attempts and one DPO attempt; none promoted.** v0 mode-collapsed; v1
+> hardened recipe but stress preservation flat at 0.25; v2 doubled stress data, still
+> flat at 0.25; v3 ran two-phase curriculum, still flat at 0.25; DPO v0 (preference
+> learning over preserve-vs-drop pairs) regressed to 0.20 — DPO learned the
+> discrimination trivially but did not transfer that into generation-time row
+> preservation, also costing −0.025 on unit_consistency. **Two instruments exhausted
+> (SFT positive demonstrations and DPO preference learning).** The flat trajectory
+> across four interventions points at preservation being a generation-time policy
+> property that requires generation-time feedback. Next experimental candidate is
+> **RL with grader as reward** (PPO/GRPO) — see
+> [`collab-eval/results/collab_dpo_v0.md`](collab-eval/results/collab_dpo_v0.md) and
+> [`collab-eval/docs/preservation_analysis.md`](collab-eval/docs/preservation_analysis.md)
+> for the full diagnostic.
 
 | Run | composite | data_preservation | unit_consistency | stress data_preservation | Verdict |
 |---|---|---|---|---|---|
@@ -178,8 +182,9 @@ make validate-results       # checks all artifacts exist and paths are consisten
 | SFT v1 | 0.9956 | 0.9875 | 1.0000 | 0.2500 | NOT PROMOTED (gate: FAIL on stress) |
 | SFT v2 | 0.9912 | 0.9750 | 1.0000 | 0.2500 | NOT PROMOTED (with concern; hypothesis refuted) |
 | SFT v3 | 0.9912 | 0.9750 | 1.0000 | 0.2500 | NOT PROMOTED (curriculum; hypothesis refuted) |
+| DPO v0 | 0.9506 | 0.9750 | 0.8375 | 0.2000 | NOT PROMOTED (preference learning; hypothesis refuted) |
 
-[Full reports](collab-eval/results/) · [Reward design rationale](collab-eval/docs/rl_env_design.md) · [Failure modes](FAILURE_MODES.md)
+[Full reports](collab-eval/results/) · [Reward design rationale](collab-eval/docs/rl_env_design.md) · [Failure modes](FAILURE_MODES.md) · [Preservation analysis](collab-eval/docs/preservation_analysis.md)
 
 ---
 

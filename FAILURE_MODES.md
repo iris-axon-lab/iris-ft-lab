@@ -23,6 +23,8 @@ This doc is mostly for the next person (or future you) walking into a similar bu
 | 11 | Quantity rebalance failed where signal/gradient was bottleneck | collab-eval | v2 |
 | 12 | mlx-lm `adapter_path` is save-only, not load-on-resume | tooling | collab-eval v3 phase 2 |
 | 13 | SFT instrument exhausted for absence-of-action signals | collab-eval | v1+v2+v3 trajectory |
+| 14 | DPO discriminator collapse without generation-time policy change | collab-eval | DPO v0 |
+| 15 | Both SFT and DPO instruments exhausted on absence-of-action signal — switch to RL | collab-eval | DPO v0 cumulative |
 
 Below: cross-cutting patterns that fall out of these.
 
@@ -274,6 +276,101 @@ and the cumulative trajectory pointed cleanly at the next instrument.
 
 ---
 
+## 14. DPO discriminator collapse without generation-time policy change — collab-eval DPO v0
+
+**Symptom.** DPO v0 trained on 80 preference pairs (chosen = gold preserves all rows;
+rejected = gold with rows dropped at random fraction [0.3, 0.7]). Training loss
+collapsed to ~0.001 by iter 30 with train accuracy 1.0 from iter 30 onward; final
+reward margin 7.7. By every training metric the run was a textbook success. But on
+the held-out stress eval, `data_preservation` came in at 0.20 — actually below the v3
+SFT baseline of 0.25, matching the no-adapter base model. DPO also regressed
+`unit_consistency` (−0.025) and composite (−0.006) on regular eval.
+
+**Root cause.** Two compounding effects:
+
+1. **Discrimination ≠ generation.** DPO's loss compares two fixed outputs and updates
+   the policy to assign higher log-probability to chosen than rejected. When the
+   discrimination is trivial (CSV with N rows vs CSV with N−k rows differs in obvious
+   token-count features), the model learns it as a classification task very fast. But
+   classification over fixed outputs does not rewire the per-step generation decision
+   "should I emit another row or stop?" — that decision happens during decoding, not
+   during the comparison. The reward signal never reaches the layer where the
+   generation choice is made.
+
+2. **β=0.1 too low for crisp signals.** The DPO KL term penalizes divergence from the
+   reference policy. With a crisp binary signal that's trivially learnable, β=0.1 lets
+   the policy drift aggressively from the v3 SFT reference. The unit_consistency
+   regression is the symptom: v3's `$M→$K` conversion knowledge was partially
+   overwritten as the policy drifted toward maximizing the (already-saturated) chosen-
+   vs-rejected log-ratio.
+
+The reference model loaded correctly (iter-1 val loss = 0.693 = −log(0.5), ruling out
+Mode 2). This is purely a policy-side failure: DPO learned the wrong target.
+
+**Fix.** Not a DPO-tuning fix. The structural problem is that preference learning over
+fixed outputs is the wrong instrument for a generation-time policy decision. Higher β
+would slow the drift but not solve the underlying mismatch — the reward signal still
+wouldn't reach the generation decision. The right instrument is RL with the grader as
+reward at rollout time (Mode 15). For DPO experiments where this pattern is suspected,
+diagnostic: if train loss collapses to <0.01 within the first 20% of iters AND a co-
+located dimension regresses on held-out eval, the discriminator-not-generator pattern
+is likely.
+
+**Lesson.** **Preference learning over pre-computed pairs is for behaviors expressible
+as token-sequence preferences.** When the target behavior is a generation-time
+boundary decision (when to stop, how long to be), DPO's reward signal cannot reach the
+right layer. Use RL with online rollouts instead. A DPO loss that collapses below
+0.01 within the first 30 iters on a binary signal is a warning sign — not a sign of
+fast convergence.
+
+**Where.** `collab-eval/results/collab_dpo_v0.md`; `collab-eval/results/collab_dpo_v0_training_notes.md` "Loss curve notes" section; `collab-eval/docs/preservation_analysis.md` §4.
+
+---
+
+## 15. Both SFT and DPO instruments exhausted on absence-of-action signal — switch to RL — collab-eval DPO v0 cumulative
+
+**Symptom.** Stress `data_preservation` across four interventions:
+
+| Run | Instrument | Stress preservation |
+|---|---|---|
+| Base | (none) | 0.20 |
+| SFT v1 | gentle recipe + 25% stress training | 0.25 |
+| SFT v2 | + 50% stress training | 0.25 |
+| SFT v3 | + curriculum (stress phase 1, mixed phase 2) | 0.25 |
+| DPO v0 | preference pairs (preserve > drop) | 0.20 |
+
+Five data points, two instrument families (SFT positive demonstrations × three
+configurations; DPO preference learning × one configuration). The metric refuses to
+move above 0.25. Co-located metrics on the same eval move cleanly (`unit_consistency`
+0.70 → 1.00 on stress under all SFT runs).
+
+**Root cause.** All four interventions share a structural flaw: they provide
+supervision on **token sequences at training time**, not feedback on **generation
+behavior at rollout time**. The grader's `row_count_preserved` is a generation-time
+property — only knowable after the policy has decided when to stop emitting rows.
+Token-level supervision (SFT) and pair-level supervision (DPO) both miss this. See
+`collab-eval/docs/preservation_analysis.md` for the five compounding reasons in detail.
+
+**Fix.** Switch to RL with the grader as reward (PPO or GRPO via mlx-lm-lora's
+`--train-mode grpo`). Reward = composite_score with `data_preservation` weighted
+heavily, plus an explicit RH-like penalty for row duplication (the harness already
+flags `format_validity ≥ 0.9 AND data_preservation < 0.5` as RH-like; that condition
+becomes a reward penalty term). KL-anchored at v3 SFT to preserve regular-eval gains.
+
+**Lesson.** **When two distinct instrument families produce flat results across
+multiple configurations of each, the bottleneck is the supervision signal's
+relationship to the target behavior, not the instrument's tuning.** SFT and DPO both
+provide pre-computed-output supervision; the target here is a generation-time policy.
+Mismatch is structural — switching instrument families inside the "pre-computed
+output" class (SFT → DPO) was the obvious move and we tried it; the next move has
+to leave that class entirely. RL with rollout-time grader feedback is the next class.
+
+**Where.** `collab-eval/results/collab_sft_v1.md`, `collab_sft_v2.md`, `collab_sft_v3.md`,
+`collab_dpo_v0.md`; `collab-eval/docs/preservation_analysis.md` (definitive analysis);
+`FAILURE_MODES.md` Mode 13 (the SFT-side observation that v0 confirmed and extended).
+
+---
+
 ## Cross-cutting patterns
 
 A few rules of thumb that fall out of the above modes. Worth applying as a pre-flight checklist before any new SFT/DPO run.
@@ -301,6 +398,19 @@ SFT iterations vary recipe, quantity, and ordering and produce identical results
 target dimension, the bottleneck is structural not parametric. Three flat data points
 is your signal to switch instruments (SFT → DPO/ORPO/PPO), not to iterate on the same
 one with finer granularity. Mode 13.
+
+**A DPO loss that collapses below 0.01 in the first 20% of iters is a warning sign,
+not a sign of fast convergence.** When the chosen/rejected discrimination is trivial
+(simple structural feature like row count), DPO learns it as classification without
+transferring to generation behavior. Diagnose by checking a held-out eval immediately
+after collapse — if a co-located dimension regressed, the discriminator-not-generator
+pattern is likely. Mode 14.
+
+**When two instrument families both produce flat results, the supervision-signal
+class is wrong.** Don't iterate further within the same class — switch classes.
+Pre-computed-output supervision (SFT positive demos, DPO preference pairs) and
+rollout-time supervision (RL with reward) are different classes; if both pre-computed
+attempts fail, the next move is rollout-time. Mode 15.
 
 **Bucket A/B/C verdicts beat binary PROMOTED/NOT-PROMOTED.** Three-bucket classification ("PROMOTED" / "NOT PROMOTED with progress" / "NOT PROMOTED with concern") lets you document forward motion without shipping unsuitable adapters. This is the antidote to gate-creep — when v2 doesn't quite hit the gate but lifts the failing dimension by 0.4, you can record that as Bucket B and plan v3 with evidence, instead of being tempted to lower the gate. (Used in collab-eval v2 prompt; not yet a failure but a documented antipattern avoided.)
 
