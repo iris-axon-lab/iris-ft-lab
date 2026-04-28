@@ -1,5 +1,7 @@
 # collab-eval
 
+> **Current status (2026-04-27):** Five experiments run (SFT v0–v3 + DPO v0); none promoted. Two instrument families exhausted (SFT positive demonstrations, DPO preference learning). Next candidate: RL with grader as reward. See §4–§8 for the full experiment log.
+
 A task environment and grader harness for open-ended document manipulation tasks,
 built to make reward design explicit. The core problem: document tasks have no binary
 oracle, so naive reward functions get gamed. This harness addresses that with decomposed
@@ -55,14 +57,14 @@ policy-search over fixed heuristics, chosen to expose grader weaknesses and esta
 credible baseline. See [`results/training_cycle_v0.md`](results/training_cycle_v0.md) for
 what was and was not implemented in that artifact.
 
-Since training cycle v0, the harness has hosted four SFT experiments (v0–v3) targeting
-the spreadsheet-cleanup task. All four are documented in §4–§7 below; **all four are
+Since training cycle v0, the harness has hosted **five experiments** (SFT v0–v3 plus DPO v0) targeting
+the spreadsheet-cleanup task. All five are documented in §4–§8 below; **all five are
 NOT PROMOTED**. The harness's promotion gate has held the line: no adapter that drops a
 material fraction of rows on long stress tables has been promoted, even when other
 dimensions improved. The flat trajectory across v1/v2/v3 (stress `data_preservation`
-stuck at 0.25) ruled out two SFT-shaped hypotheses (data quantity, gradient competition)
-and points at preference learning (DPO) as the next instrument — see the "What's next"
-pointer in §7.
+stuck at 0.25) and the DPO v0 regression (back to 0.20) have now exhausted two instrument
+families (SFT positive demonstrations and DPO preference learning), pointing at RL with
+grader as reward as the next instrument — see the "What's next" pointer in §8.
 
 The design note at [`docs/rl_env_design.md`](docs/rl_env_design.md) covers reward
 decomposition strategy, failure modes, and extension paths to a fuller RL setup.
@@ -317,7 +319,7 @@ See [`results/model_baseline_v0.md`](results/model_baseline_v0.md) for full per-
 
 **What it adds:** Infrastructure for SFT training — train/held-out data splits,
 SFT record builder, training config, and a training script with `--dry-run` /
-`--check-only` modes. No training has been run.
+`--check-only` modes. **Historical note:** training has since been run — see §4–§8 for the SFT v0–v3 and DPO v0 results.
 
 **How to build SFT data:**
 
@@ -565,7 +567,7 @@ demonstration. The collab-eval generator already produces stress cases (long tab
 preserves all rows); building preference pairs is one new generator + a DPO training step on
 top of v3 (or directly on top of base, since the SFT-acquired schema is intact).
 
-The full v4 prompt and design is queued for a separate session — not started here.
+DPO v0 ran in the next session — see §8 for the full design and results.
 
 #### Reproducibility
 
@@ -579,6 +581,89 @@ The full v4 prompt and design is queued for a separate session — not started h
 | Phase 2 data | `data/sft_collab_eval_full_v2/` (regenerate from seeds 100 + 500) |
 | Held-out splits | unchanged from v1 (seeds 200 regular, 300 stress) |
 | Full report | [`results/collab_sft_v3.md`](results/collab_sft_v3.md) |
+
+---
+
+### 8. DPO v0 — preference learning on preservation (gate: FAIL — hypothesis refuted)
+
+**DPO v0 was run. The adapter is not promoted. v0/v1/v2/v3 SFT adapters and the v3
+fused model are preserved unmodified.**
+
+DPO with 80 preference pairs targeting row preservation (chosen=gold; rejected=gold
+with rows dropped at random fraction [0.3, 0.7]). Trained on top of the v3 SFT adapter
+fused into base (Strategy 1, mirroring trace DPO). β=0.1, lr=5e-6, 150 iters, batch=1,
+max_seq_length=2048, grad_checkpoint=true, mlx-lm-lora v2.1.0 backend.
+
+#### Eval snapshot
+
+| Metric | Base | DPO v0 | Delta |
+|---|---|---|---|
+| composite | 0.9569 | 0.9506 | **−0.0063** |
+| data_preservation | 0.9750 | 0.9750 | +0.0000 |
+| unit_consistency | 0.8625 | 0.8375 | **−0.0250** |
+| RH-like cases | 2 | 2 | +0 |
+| **stress data_preservation** | 0.2000 | **0.2000** | +0.0000 |
+
+**Gate: FAIL — hypothesis refuted (0/5 PASS on the improvement axis).** DPO regressed
+two of v3's four PASSing conditions (composite and unit_consistency) while leaving the
+target dimension (stress preservation) flat at the base-model 0.20.
+
+#### Headline diagnostic
+
+Training loss collapsed to ~0.001 by iter 30 with train accuracy 1.0 — DPO trivially
+learned the "20-row CSV > 14-row CSV" discrimination as a classification task. But
+that's a comparison over *fixed* outputs at training time; at inference time the
+policy still has to decide when to stop generating. The reward signal sharpened
+log-ratios over preference pairs without rewiring the per-step generation decision.
+β=0.1 provided insufficient KL anchoring against such a crisp binary signal — the
+policy drifted from v3 SFT, eroding unit_consistency in the process.
+
+The reference model loaded correctly (iter-1 val loss = 0.693 = −log(0.5)), ruling out
+the Mode 2 fusion-defect signature as a cause. The failure is purely policy-side:
+DPO learned discrimination, not generation. See `FAILURE_MODES.md` Mode 14.
+
+#### Why preservation has been particularly hard
+
+Four interventions across two instruments (SFT v1/v2/v3 recipe-quantity-curriculum;
+DPO v0 preference learning) have produced 0.20–0.25 stress `data_preservation` —
+essentially flat at base. The substantive analysis of the five compounding reasons
+this dimension has resisted is in
+[`docs/preservation_analysis.md`](docs/preservation_analysis.md):
+
+1. **Absence-of-action signal asymmetry** (Mode 13) — gold can't show a non-deletion.
+2. **Token-economic disincentive at generation time** — long tables incentivize early termination.
+3. **Reward dilution** — one missing row out of 20 is a tiny loss component.
+4. **DPO learned discrimination, not generation** (Mode 14) — preference over fixed outputs ≠ generation-time policy change.
+5. **Curriculum (v3) ruled out gradient competition** as the bottleneck — the stress signal itself doesn't carry the right info through SFT.
+
+#### What's next
+
+Reinforcement learning with the grader as reward (v5). The four instruments tried so far
+all share a flaw: they provide supervision on token sequences at training time, not
+feedback on generation behavior at rollout time. The grader's `row_count_preserved` is a
+*generation-time* property; only RL provides feedback at the right layer.
+
+Concretely: PPO or GRPO via mlx-lm-lora's `--train-mode grpo`, reward =
+composite_score with `data_preservation` weighted heavily and an explicit RH-like
+penalty term for row duplication, KL-anchored at v3 SFT. See
+[`docs/preservation_analysis.md`](docs/preservation_analysis.md) "What's a viable next
+step" section for the full rationale.
+
+The v5 prompt (RL with grader) is intentionally left out of scope for this session — it will require a dedicated design session.
+
+#### Reproducibility
+
+| Field | Value |
+|---|---|
+| Config | `configs/dpo_collab_eval_qwen25_3b.yaml` |
+| DPO adapter | `adapters/dpo_collab_eval_qwen25_3b_v0/` |
+| Fused SFT model | `adapters/qwen25_3b_collab_v3_fused/` |
+| v3 SFT adapter | `adapters/sft_collab_eval_qwen25_3b_v3/` |
+| Train data | `data/processed/dpo/train.jsonl` (regenerate from seed=600) |
+| Valid data | `data/processed/dpo/valid.jsonl` (regenerate from seed=601) |
+| Held-out splits | unchanged from v1 (seeds 200 regular, 300 stress) |
+| Full report | [`results/collab_dpo_v0.md`](results/collab_dpo_v0.md) |
+| Training notes | [`results/collab_dpo_v0_training_notes.md`](results/collab_dpo_v0_training_notes.md) |
 
 ---
 

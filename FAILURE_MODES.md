@@ -1,8 +1,75 @@
 # Failure modes — iris-ft-lab
 
-Consolidated catalog of the ML and tooling failures hit while building the Trace SFT/DPO and collab-eval SFT pipelines. One paragraph per mode: symptom, root cause, fix, where the evidence lives. The failures here are real — every entry was a session blocker that was diagnosed, fixed, and committed, not a hypothetical.
+Consolidated catalog of the ML and tooling failures hit while building the Trace SFT/DPO and collab-eval SFT/DPO pipelines. One paragraph per mode: symptom, root cause, fix, where the evidence lives. The failures here are real — every entry was a session blocker that was diagnosed, fixed, and committed, not a hypothetical.
 
-This doc is mostly for the next person (or future you) walking into a similar bug. Read it before iterating on either pipeline.
+This doc is mostly for the next person (or future you) walking into a similar bug. Read it before iterating on either pipeline. Start with the **"Three dimensions: Knowing, Doing, Deciding"** section below — it maps the 15 modes into three failure classes with different remedies, so you can orient quickly before reading individual entries.
+
+---
+
+## Three dimensions: Knowing, Doing, Deciding
+
+The 15 modes below fall into three distinct failure classes. Recognizing the class before debugging is important: the remedies are structurally different.
+
+**Knowing** — The model's learned representation is wrong or corrupted. The problem is in what the model ended up knowing after training, or in the data and infrastructure that shaped it. Fix: find the corruption source (data, recipe, or weight-level defect) and retrain from a clean state.
+
+**Doing** — The execution layer failed. The problem is in the tooling, harness, or framework that surrounds training. The model itself is fine; the run was misconfigured, timed out, or used an API incorrectly. Fix: find the tooling constraint, fix the scaffold, re-run. No gradient information is lost.
+
+**Deciding** — The policy layer failed. Either the trained model is making the wrong generation-time decision (inference-time policy failure), or the practitioner made the wrong instrument selection decision (meta-level policy failure). This class is the hardest: the training ran correctly, the tooling worked, but the choice of what to train or how to measure it was wrong. Fix: change the instrument or supervision signal — more of the same will not help.
+
+---
+
+### K — Knowing failures (Modes 1, 2, 3, 5, 7, 11)
+
+| Sub-class | Description | Modes |
+|---|---|---|
+| K1 — Recipe / data quality | Hyperparameters, data imbalance, or template errors corrupt what the model learns | 1, 5, 7 |
+| K2 — Infrastructure corrupts trained weights | The run completes cleanly; the artifact is silently wrong | 2, 3 |
+| K3 — Signal ceiling | Data and recipe are correct, but the training signal cannot carry the required information | 11 |
+
+**Canonical K2 example — Mode 2 (fusion defect):** `mlx_lm fuse` without `--dequantize` completed without error, produced a same-size output, and logged nothing anomalous. The fused weights were byte-equivalent to the original 4-bit base. The defect was invisible until the downstream eval scored 0/12 instead of expected 9/12. Lesson: verify the fused artifact size, not just the exit code.
+
+**How eval tightened against K:** The Mode 2 experience added the hard-stop rule — baseline eval must score within ±1 of expected before any adapter eval runs. K3 (Mode 11) added the signal-ceiling check: if doubling data doesn't move the metric, stop iterating on data quantity and diagnose the gradient.
+
+**Training-process impact:** K failures are often invisible at training time (the loss curve looks normal). The promotion gate is the first place they surface. This is why a well-calibrated gate matters more than clean training logs.
+
+---
+
+### D — Doing failures (Modes 9, 10, 12)
+
+| Sub-class | Description | Modes |
+|---|---|---|
+| D1 — Harness / tooling constraints underestimated | The run infrastructure has limits that weren't accounted for | 9, 10 |
+| D2 — Framework API misuse | A framework config field does something other than expected | 12 |
+
+**Canonical D example — Mode 9 (Bash timeout):** The Bash tool has a 10-minute hard timeout; a 23-minute training run must be backgrounded and polled. The first collab-eval v2 training run was issued as a foreground command and silently killed mid-training. Lesson: any training run > 5 minutes must use `run_in_background` + until-loop polling.
+
+**Pattern:** D failures are almost always fixable without retraining — they're about the scaffold, not the model. If the training run was killed, re-run it. If the config field did the wrong thing, fix the config.
+
+---
+
+### Dc — Deciding failures (Modes 4, 6, 8, 13, 14, 15)
+
+| Sub-class | Description | Modes |
+|---|---|---|
+| Dc1 — Gate / promotion design | The success criterion was wrong before training started | 4 |
+| Dc2 — Instrument selection | The chosen training method cannot, in principle, learn the target behavior | 6, 8, 13, 14 |
+| Dc3 — Cumulative exhaustion | Multiple instruments have been tried; the trajectory itself is the signal | 15 |
+
+**Canonical Dc3 example — Mode 15 (both instruments exhausted):** Three SFT configs (recipe, quantity, curriculum) and one DPO run all produced 0.20–0.25 stress `data_preservation`. Each individual run could have been attributed to a specific hyperparameter. The trajectory across all five runs cannot — it points at a structural property of the supervision signal, not a tunable parameter. Lesson: when two instrument families have been exhausted on the same target, the problem is in the instrument class, not the instance.
+
+**How eval tightened against Dc:** The stress eval (gate condition 5) was added specifically to catch Dc2 failures — an adapter that looks fine on regular eval but fails on the target behavior. Without gate condition 5, SFT v1 (composite +0.039, unit_consistency +0.138) would have been promoted despite 0.25 stress preservation.
+
+**The 6/3/6 split observation:** Knowing and Deciding have 6 modes each; Doing has only 3. This reflects where the real cost lies in an ML project: failures of representation and instrument selection compound across sessions; tooling failures are usually one-session blockers. The Deciding class is also harder to detect — a D failure usually announces itself (training crashed, timeout error), while a Dc failure only becomes visible when the eval results are in.
+
+---
+
+### Pre-flight checklist
+
+Three questions to ask before starting a new training run:
+
+- **K:** Is the artifact I'm training from clean? (Verify fused model size; check training data for template errors; confirm the recipe hasn't over-parameterized for dataset size.)
+- **D:** Is the scaffold set up correctly? (Background command? Polling loop? Framework API used as documented?)
+- **Dc:** Is this the right instrument for the target behavior? (What does the supervision signal reward? Is there a ceiling I'm about to hit? Has a previous run already hit it?)
 
 ---
 
@@ -23,6 +90,8 @@ This doc is mostly for the next person (or future you) walking into a similar bu
 | 11 | Quantity rebalance failed where signal/gradient was bottleneck | collab-eval | v2 |
 | 12 | mlx-lm `adapter_path` is save-only, not load-on-resume | tooling | collab-eval v3 phase 2 |
 | 13 | SFT instrument exhausted for absence-of-action signals | collab-eval | v1+v2+v3 trajectory |
+| 14 | DPO discriminator collapse without generation-time policy change | collab-eval | DPO v0 |
+| 15 | Both SFT and DPO instruments exhausted on absence-of-action signal — switch to RL | collab-eval | DPO v0 cumulative |
 
 Below: cross-cutting patterns that fall out of these.
 
@@ -274,6 +343,101 @@ and the cumulative trajectory pointed cleanly at the next instrument.
 
 ---
 
+## 14. DPO discriminator collapse without generation-time policy change — collab-eval DPO v0
+
+**Symptom.** DPO v0 trained on 80 preference pairs (chosen = gold preserves all rows;
+rejected = gold with rows dropped at random fraction [0.3, 0.7]). Training loss
+collapsed to ~0.001 by iter 30 with train accuracy 1.0 from iter 30 onward; final
+reward margin 7.7. By every training metric the run was a textbook success. But on
+the held-out stress eval, `data_preservation` came in at 0.20 — actually below the v3
+SFT baseline of 0.25, matching the no-adapter base model. DPO also regressed
+`unit_consistency` (−0.025) and composite (−0.006) on regular eval.
+
+**Root cause.** Two compounding effects:
+
+1. **Discrimination ≠ generation.** DPO's loss compares two fixed outputs and updates
+   the policy to assign higher log-probability to chosen than rejected. When the
+   discrimination is trivial (CSV with N rows vs CSV with N−k rows differs in obvious
+   token-count features), the model learns it as a classification task very fast. But
+   classification over fixed outputs does not rewire the per-step generation decision
+   "should I emit another row or stop?" — that decision happens during decoding, not
+   during the comparison. The reward signal never reaches the layer where the
+   generation choice is made.
+
+2. **β=0.1 too low for crisp signals.** The DPO KL term penalizes divergence from the
+   reference policy. With a crisp binary signal that's trivially learnable, β=0.1 lets
+   the policy drift aggressively from the v3 SFT reference. The unit_consistency
+   regression is the symptom: v3's `$M→$K` conversion knowledge was partially
+   overwritten as the policy drifted toward maximizing the (already-saturated) chosen-
+   vs-rejected log-ratio.
+
+The reference model loaded correctly (iter-1 val loss = 0.693 = −log(0.5), ruling out
+Mode 2). This is purely a policy-side failure: DPO learned the wrong target.
+
+**Fix.** Not a DPO-tuning fix. The structural problem is that preference learning over
+fixed outputs is the wrong instrument for a generation-time policy decision. Higher β
+would slow the drift but not solve the underlying mismatch — the reward signal still
+wouldn't reach the generation decision. The right instrument is RL with the grader as
+reward at rollout time (Mode 15). For DPO experiments where this pattern is suspected,
+diagnostic: if train loss collapses to <0.01 within the first 20% of iters AND a co-
+located dimension regresses on held-out eval, the discriminator-not-generator pattern
+is likely.
+
+**Lesson.** **Preference learning over pre-computed pairs is for behaviors expressible
+as token-sequence preferences.** When the target behavior is a generation-time
+boundary decision (when to stop, how long to be), DPO's reward signal cannot reach the
+right layer. Use RL with online rollouts instead. A DPO loss that collapses below
+0.01 within the first 30 iters on a binary signal is a warning sign — not a sign of
+fast convergence.
+
+**Where.** `collab-eval/results/collab_dpo_v0.md`; `collab-eval/results/collab_dpo_v0_training_notes.md` "Loss curve notes" section; `collab-eval/docs/preservation_analysis.md` §4.
+
+---
+
+## 15. Both SFT and DPO instruments exhausted on absence-of-action signal — switch to RL — collab-eval DPO v0 cumulative
+
+**Symptom.** Stress `data_preservation` across four interventions:
+
+| Run | Instrument | Stress preservation |
+|---|---|---|
+| Base | (none) | 0.20 |
+| SFT v1 | gentle recipe + 25% stress training | 0.25 |
+| SFT v2 | + 50% stress training | 0.25 |
+| SFT v3 | + curriculum (stress phase 1, mixed phase 2) | 0.25 |
+| DPO v0 | preference pairs (preserve > drop) | 0.20 |
+
+Five data points, two instrument families (SFT positive demonstrations × three
+configurations; DPO preference learning × one configuration). The metric refuses to
+move above 0.25. Co-located metrics on the same eval move cleanly (`unit_consistency`
+0.70 → 1.00 on stress under all SFT runs).
+
+**Root cause.** All four interventions share a structural flaw: they provide
+supervision on **token sequences at training time**, not feedback on **generation
+behavior at rollout time**. The grader's `row_count_preserved` is a generation-time
+property — only knowable after the policy has decided when to stop emitting rows.
+Token-level supervision (SFT) and pair-level supervision (DPO) both miss this. See
+`collab-eval/docs/preservation_analysis.md` for the five compounding reasons in detail.
+
+**Fix.** Switch to RL with the grader as reward (PPO or GRPO via mlx-lm-lora's
+`--train-mode grpo`). Reward = composite_score with `data_preservation` weighted
+heavily, plus an explicit RH-like penalty for row duplication (the harness already
+flags `format_validity ≥ 0.9 AND data_preservation < 0.5` as RH-like; that condition
+becomes a reward penalty term). KL-anchored at v3 SFT to preserve regular-eval gains.
+
+**Lesson.** **When two distinct instrument families produce flat results across
+multiple configurations of each, the bottleneck is the supervision signal's
+relationship to the target behavior, not the instrument's tuning.** SFT and DPO both
+provide pre-computed-output supervision; the target here is a generation-time policy.
+Mismatch is structural — switching instrument families inside the "pre-computed
+output" class (SFT → DPO) was the obvious move and we tried it; the next move has
+to leave that class entirely. RL with rollout-time grader feedback is the next class.
+
+**Where.** `collab-eval/results/collab_sft_v1.md`, `collab_sft_v2.md`, `collab_sft_v3.md`,
+`collab_dpo_v0.md`; `collab-eval/docs/preservation_analysis.md` (definitive analysis);
+`FAILURE_MODES.md` Mode 13 (the SFT-side observation that v0 confirmed and extended).
+
+---
+
 ## Cross-cutting patterns
 
 A few rules of thumb that fall out of the above modes. Worth applying as a pre-flight checklist before any new SFT/DPO run.
@@ -301,6 +465,19 @@ SFT iterations vary recipe, quantity, and ordering and produce identical results
 target dimension, the bottleneck is structural not parametric. Three flat data points
 is your signal to switch instruments (SFT → DPO/ORPO/PPO), not to iterate on the same
 one with finer granularity. Mode 13.
+
+**A DPO loss that collapses below 0.01 in the first 20% of iters is a warning sign,
+not a sign of fast convergence.** When the chosen/rejected discrimination is trivial
+(simple structural feature like row count), DPO learns it as classification without
+transferring to generation behavior. Diagnose by checking a held-out eval immediately
+after collapse — if a co-located dimension regressed, the discriminator-not-generator
+pattern is likely. Mode 14.
+
+**When two instrument families both produce flat results, the supervision-signal
+class is wrong.** Don't iterate further within the same class — switch classes.
+Pre-computed-output supervision (SFT positive demos, DPO preference pairs) and
+rollout-time supervision (RL with reward) are different classes; if both pre-computed
+attempts fail, the next move is rollout-time. Mode 15.
 
 **Bucket A/B/C verdicts beat binary PROMOTED/NOT-PROMOTED.** Three-bucket classification ("PROMOTED" / "NOT PROMOTED with progress" / "NOT PROMOTED with concern") lets you document forward motion without shipping unsuitable adapters. This is the antidote to gate-creep — when v2 doesn't quite hit the gate but lifts the failing dimension by 0.4, you can record that as Bucket B and plan v3 with evidence, instead of being tempted to lower the gate. (Used in collab-eval v2 prompt; not yet a failure but a documented antipattern avoided.)
 

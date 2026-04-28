@@ -1,10 +1,16 @@
 # iris-ft-lab
 
-Fine-tuning lab for Trace Layer 2 — structured memory extraction and prospective intent modeling.
+Fine-tuning lab with two tracks: **Track A** (Trace Layer 2 memory extraction — SFT + DPO, promoted) and **Track B** (collab-eval document tasks — four SFT runs + one DPO run, none promoted, RL next).
 
-This is not a generic LLM fine-tuning sandbox. It is a focused personal lab for improving
-Trace's core processing pipeline: transforming raw trace inputs into structured memory records,
-detecting prospective commitments, and later matching intentions against observed outcomes.
+Track A shipped a working adapter (DPO v1, 12/12 tier accuracy). Track B is an ongoing instrument study on a harder problem: whether standard SFT and DPO can teach a row-preservation policy that is structurally about generation boundaries, not token imitation. Both tracks run on the same hardware, the same base model (`mlx-community/Qwen2.5-3B-Instruct-4bit`), and the same MLX-LM framework.
+
+---
+
+## Why this repo matters
+
+**Track A** demonstrates that small-data SFT + DPO is sufficient to solve a structured extraction problem on a 3B model: 100 SFT examples to align schema, then 80 DPO preference pairs to fix residual prospective-memory misclassification. The promoted DPO v1 adapter achieves 12/12 on the gold eval with 0 regressions.
+
+**Track B** demonstrates what happens when you hit the ceiling of those instruments: four SFT runs and one DPO run, all stuck at 0.20–0.25 stress `data_preservation`, pointing at a fundamental limitation of supervision on token sequences vs. generation-time policy feedback. The failure trajectory is documented at each step; two instrument families are now exhausted (SFT positive demonstrations and DPO preference learning); RL with grader as reward is the next candidate.
 
 ---
 
@@ -28,7 +34,9 @@ training and evaluation infrastructure for improving that.
 
 ---
 
-## Results
+## Track A — Trace memory extraction
+
+Trace Layer 2 turns raw trace text into structured memory records. The SFT/DPO pipeline is the optimization loop for that extraction.
 
 > **Small gold eval / smoke eval** — 12 examples. Results are directional, not statistically robust.
 > See [`eval/results.md`](eval/results.md) for the full report including confusion matrices,
@@ -68,7 +76,36 @@ for the full report.
 
 ---
 
-## Lessons & failure modes
+## Track B — collab-eval document-task training
+
+> **Four SFT runs and one DPO run; none promoted.** v0 mode-collapsed; v1
+> hardened recipe but stress preservation flat at 0.25; v2 doubled stress data, still
+> flat at 0.25; v3 ran two-phase curriculum, still flat at 0.25; DPO v0 (preference
+> learning over preserve-vs-drop pairs) regressed to 0.20 — DPO learned the
+> discrimination trivially but did not transfer that into generation-time row
+> preservation, also costing −0.025 on unit_consistency. **Two instruments exhausted
+> (SFT positive demonstrations and DPO preference learning).** The flat trajectory
+> across four interventions points at preservation being a generation-time policy
+> property that requires generation-time feedback. Next experimental candidate is
+> **RL with grader as reward** (PPO/GRPO) — see
+> [`collab-eval/results/collab_dpo_v0.md`](collab-eval/results/collab_dpo_v0.md) and
+> [`collab-eval/docs/preservation_analysis.md`](collab-eval/docs/preservation_analysis.md)
+> for the full diagnostic.
+
+| Run | composite | data_preservation | unit_consistency | stress data_preservation | Verdict |
+|---|---|---|---|---|---|
+| Base | 0.9569 | 0.9750 | 0.8625 | 0.2000 | — |
+| SFT v0 | 0.9110 | 0.7500 | 1.0000 | — | NOT PROMOTED (mode collapse) |
+| SFT v1 | 0.9956 | 0.9875 | 1.0000 | 0.2500 | NOT PROMOTED (gate: FAIL on stress) |
+| SFT v2 | 0.9912 | 0.9750 | 1.0000 | 0.2500 | NOT PROMOTED (with concern; hypothesis refuted) |
+| SFT v3 | 0.9912 | 0.9750 | 1.0000 | 0.2500 | NOT PROMOTED (curriculum; hypothesis refuted) |
+| DPO v0 | 0.9506 | 0.9750 | 0.8375 | 0.2000 | NOT PROMOTED (preference learning; hypothesis refuted) |
+
+[Full reports](collab-eval/results/) · [Reward design rationale](collab-eval/docs/rl_env_design.md) · [Failure modes](FAILURE_MODES.md) · [Preservation analysis](collab-eval/docs/preservation_analysis.md)
+
+---
+
+## Shared lessons & failure modes
 
 Both pipelines hit real failure modes during development — mode collapse, a quantized-base
 fusion defect, an unreachable promotion gate, training-distribution asymmetry, a missing
@@ -94,8 +131,7 @@ a recipe parameter" — would have saved a session each time they were learned t
 64GB unified memory is unusually large for a laptop — it comfortably fits a 4-bit quantized
 7B model (≈4GB) alongside activations, optimizer state, and LoRA adapters with room to spare.
 You can run meaningful fine-tuning experiments locally without cloud compute.
-DPO training peaks at ~19 GB on the float16 fused model (vs ~4 GB for SFT); smaller-RAM Macs
-should expect to use the SFT path only.
+DPO training peaks at ~19–20 GB on the float16 fused model for both Track A and Track B DPO runs (vs ~4 GB for SFT on the 4-bit base); smaller-RAM Macs should expect to use the SFT path only.
 
 ---
 
@@ -115,7 +151,7 @@ tool for this hardware.
 
 ---
 
-## Quick start
+## Quick start — Track A (Trace)
 
 **For DPO only:** `pip install -U mlx-lm-lora` (third-party, separate from `mlx-lm`).
 The DPO scaffold (`scripts/train_dpo.py`) checks for this and exits cleanly if missing.
@@ -159,27 +195,20 @@ make validate-results       # checks all artifacts exist and paths are consisten
 
 ---
 
-## Eval Snapshot — collab-eval (document tasks)
+## Quick start — Track B (collab-eval)
 
-> **Three SFT attempts; none promoted.** v0 mode-collapsed; v1 hardened recipe but stress
-> preservation flat at 0.25; v2 doubled stress data, still flat at 0.25; v3 ran two-phase
-> curriculum (stress-only first, then mixed at lower LR), still flat at 0.25 — three
-> different interventions, identical outcome. The flat trajectory rules out two
-> SFT-shaped hypotheses (data quantity, gradient competition) and confirms signal
-> asymmetry: SFT cannot teach absence-of-action policies through positive demonstrations.
-> Next experimental candidate is **DPO-on-preservation** — see
-> [`collab-eval/results/collab_sft_v3.md`](collab-eval/results/collab_sft_v3.md) and
-> the "What's next" pointer in [`collab-eval/README.md`](collab-eval/README.md) §7.
+```bash
+cd collab-eval
+pip install -r requirements.txt
 
-| Run | composite | data_preservation | unit_consistency | stress data_preservation | Verdict |
-|---|---|---|---|---|---|
-| Base | 0.9569 | 0.9750 | 0.8625 | 0.2000 | — |
-| SFT v0 | 0.9110 | 0.7500 | 1.0000 | — | NOT PROMOTED (mode collapse) |
-| SFT v1 | 0.9956 | 0.9875 | 1.0000 | 0.2500 | NOT PROMOTED (gate: FAIL on stress) |
-| SFT v2 | 0.9912 | 0.9750 | 1.0000 | 0.2500 | NOT PROMOTED (with concern; hypothesis refuted) |
-| SFT v3 | 0.9912 | 0.9750 | 1.0000 | 0.2500 | NOT PROMOTED (curriculum; hypothesis refuted) |
+# Run the harness demo (no API key needed)
+python scripts/run_demo.py
 
-[Full reports](collab-eval/results/) · [Reward design rationale](collab-eval/docs/rl_env_design.md) · [Failure modes](FAILURE_MODES.md)
+# Run the test suite
+pytest tests/ -v
+
+# Reproduce the SFT/DPO training cycles — see collab-eval/README.md §4–§8
+```
 
 ---
 

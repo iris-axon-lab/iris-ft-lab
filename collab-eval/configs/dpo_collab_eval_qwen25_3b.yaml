@@ -1,0 +1,52 @@
+# Collab-eval DPO v0 — row-preservation policy shaping
+#
+# Backend: mlx-lm-lora v2.1.0 (mlx_lm_lora.train --train-mode dpo)
+# Reference SFT: v3 fused into base via fuse_v3_sft.py
+# KL anchored at v3 SFT preserves the unit-conversion + format gains v3 already taught.
+#
+# Policy goal: shift the policy from "drop ~75% of rows on long stress tables" to
+# "preserve all rows on stress tables" without regressing v3's regular-eval gains.
+#
+# Recipe rationale:
+#   - rank 8 (vs SFT v3's rank 4): fresh DPO LoRA needs capacity to express the policy
+#     shift SFT couldn't fit at rank 4. The DPO LoRA is separate from the fused-SFT
+#     weights, so this isn't competing with v3's representations.
+#   - max_seq_length 2048 (vs trace DPO's 512): stress cases are 1500-2000 tokens.
+#   - batch_size 1 (vs trace DPO's 2): paired DPO doubles per-step memory; long
+#     sequences make batch 2 unsafe on 64 GB Mac.
+#   - lr 5e-6, beta 0.1, sigmoid loss: matches trace DPO (known-good DPO recipe).
+
+model:
+  path: "adapters/qwen25_3b_collab_v3_fused"
+
+reference_model:
+  path: "adapters/qwen25_3b_collab_v3_fused"
+
+data:
+  dir: "data/processed/dpo"
+
+dpo:
+  beta: 0.1
+  loss_type: "sigmoid"
+
+training:
+  iters: 150
+  batch_size: 1
+  learning_rate: 5.0e-6
+  max_seq_length: 2048
+  grad_checkpoint: true    # required for headroom: with seq=2048 + 2 model copies +
+                           # 4 forwards/step, peak is ~50-60 GB without checkpoint
+                           # vs ~25-40 GB with. Trace DPO used grad_checkpoint=true
+                           # at seq=512 and peaked at 19 GB; collab-eval is higher
+                           # due to seq^2 attention scaling. Adds ~30% wall time.
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.05
+  num_layers: 16
+
+output:
+  adapter_path: "adapters/dpo_collab_eval_qwen25_3b_v0"
+  save_every: 50
+  steps_per_report: 10
