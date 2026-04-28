@@ -1,0 +1,29 @@
+# SFT v3 phase 1 — stress-only curriculum
+# Goal: embed preservation signal into adapter weights without competing
+# deletion gradients. 150 iters on 240 stress cases (~2.5 epochs at batch 4).
+# Phase 2 will resume from this adapter and refine on mixed data at lower lr.
+
+model: mlx-community/Qwen2.5-3B-Instruct-4bit
+data: data/sft_collab_eval_full_v3_phase1
+train: true
+test: false
+
+num_layers: 16
+lora_parameters:
+  rank: 4
+  scale: 8.0
+  dropout: 0.05
+
+batch_size: 4
+iters: 150
+steps_per_eval: 50
+save_every: 50
+learning_rate: 5.0e-5
+lr_schedule:
+  name: cosine_decay
+  warmup: 15
+  arguments: [5.0e-5, 150, 5.0e-7]
+grad_checkpoint: false
+
+adapter_path: adapters/sft_collab_eval_qwen25_3b_v3_phase1/
+max_seq_length: 2048
