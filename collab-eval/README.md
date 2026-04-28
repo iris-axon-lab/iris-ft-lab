@@ -69,11 +69,9 @@ grader as reward as the next instrument — see the "What's next" pointer in §8
 The design note at [`docs/rl_env_design.md`](docs/rl_env_design.md) covers reward
 decomposition strategy, failure modes, and extension paths to a fuller RL setup.
 
-A longer builder's log — covering design decisions, failure modes encountered during
+A longer builder's log — covering design decisions, SFT/DPO trajectory, failure modes encountered during
 construction, and the reward-hacking probes — is published at
-[iris-axon-lab.github.io](https://iris-axon-lab.github.io). Note: the public builder's
-log reflects the harness as of training cycle v0, before the SFT experiments. For the
-current SFT artifact catalog, see §4–§7 below.
+[iris-axon-lab.github.io](https://iris-axon-lab.github.io).
 
 ---
 
