@@ -161,12 +161,15 @@ make validate-results       # checks all artifacts exist and paths are consisten
 
 ## Eval Snapshot — collab-eval (document tasks)
 
-> **Two SFT attempts; neither promoted.** v0 mode-collapsed; v1 hardened recipe but stress
-> preservation flat at 0.25; v2 doubled stress data, still flat at 0.25 (hypothesis refuted —
-> see [`collab-eval/results/collab_sft_v2.md`](collab-eval/results/collab_sft_v2.md)). Both
-> point at gradient competition or signal asymmetry as the dominant failure mode, not data
-> quantity. v3 (curriculum learning) and v4 (DPO on preservation pairs) are the next
-> experimental candidates.
+> **Three SFT attempts; none promoted.** v0 mode-collapsed; v1 hardened recipe but stress
+> preservation flat at 0.25; v2 doubled stress data, still flat at 0.25; v3 ran two-phase
+> curriculum (stress-only first, then mixed at lower LR), still flat at 0.25 — three
+> different interventions, identical outcome. The flat trajectory rules out two
+> SFT-shaped hypotheses (data quantity, gradient competition) and confirms signal
+> asymmetry: SFT cannot teach absence-of-action policies through positive demonstrations.
+> Next experimental candidate is **DPO-on-preservation** — see
+> [`collab-eval/results/collab_sft_v3.md`](collab-eval/results/collab_sft_v3.md) and
+> the "What's next" pointer in [`collab-eval/README.md`](collab-eval/README.md) §7.
 
 | Run | composite | data_preservation | unit_consistency | stress data_preservation | Verdict |
 |---|---|---|---|---|---|
@@ -174,6 +177,7 @@ make validate-results       # checks all artifacts exist and paths are consisten
 | SFT v0 | 0.9110 | 0.7500 | 1.0000 | — | NOT PROMOTED (mode collapse) |
 | SFT v1 | 0.9956 | 0.9875 | 1.0000 | 0.2500 | NOT PROMOTED (gate: FAIL on stress) |
 | SFT v2 | 0.9912 | 0.9750 | 1.0000 | 0.2500 | NOT PROMOTED (with concern; hypothesis refuted) |
+| SFT v3 | 0.9912 | 0.9750 | 1.0000 | 0.2500 | NOT PROMOTED (curriculum; hypothesis refuted) |
 
 [Full reports](collab-eval/results/) · [Reward design rationale](collab-eval/docs/rl_env_design.md) · [Failure modes](FAILURE_MODES.md)
 

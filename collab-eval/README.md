@@ -50,17 +50,28 @@ training cycle v0, a minimal measured training-cycle artifact:
 - **One measured optimization loop** (four policies compared on generated tasks)
 - **Reward-hacking analysis** (three concrete hacking examples found under optimization pressure)
 
-This is NOT an RL implementation. No model is trained. The loop is policy-search over
-fixed heuristics, chosen to expose grader weaknesses and establish a credible baseline.
-See [`results/training_cycle_v0.md`](results/training_cycle_v0.md) for what was and
-was not implemented.
+The original `training_cycle_v0` artifact below is NOT an RL implementation — it is
+policy-search over fixed heuristics, chosen to expose grader weaknesses and establish a
+credible baseline. See [`results/training_cycle_v0.md`](results/training_cycle_v0.md) for
+what was and was not implemented in that artifact.
+
+Since training cycle v0, the harness has hosted four SFT experiments (v0–v3) targeting
+the spreadsheet-cleanup task. All four are documented in §4–§7 below; **all four are
+NOT PROMOTED**. The harness's promotion gate has held the line: no adapter that drops a
+material fraction of rows on long stress tables has been promoted, even when other
+dimensions improved. The flat trajectory across v1/v2/v3 (stress `data_preservation`
+stuck at 0.25) ruled out two SFT-shaped hypotheses (data quantity, gradient competition)
+and points at preference learning (DPO) as the next instrument — see the "What's next"
+pointer in §7.
 
 The design note at [`docs/rl_env_design.md`](docs/rl_env_design.md) covers reward
 decomposition strategy, failure modes, and extension paths to a fuller RL setup.
 
 A longer builder's log — covering design decisions, failure modes encountered during
 construction, and the reward-hacking probes — is published at
-[iris-axon-lab.github.io](https://iris-axon-lab.github.io).
+[iris-axon-lab.github.io](https://iris-axon-lab.github.io). Note: the public builder's
+log reflects the harness as of training cycle v0, before the SFT experiments. For the
+current SFT artifact catalog, see §4–§7 below.
 
 ---
 
@@ -149,9 +160,10 @@ a specific grader failure mode described in the "What this demonstrates" section
 python scripts/score_eval.py
 ```
 
-Writes (or overwrites) `results/eval_results_v1.md` with per-case composite scores
-and dimension breakdowns. The FT v1 row in that file is an explicit placeholder — no RL
-checkpoint exists; a training run is required before it can be populated.
+Writes (or overwrites) `results/eval_results_v1.md` with per-case composite scores and
+dimension breakdowns. The FT v1 row in that file remains a placeholder — it was the
+original heuristic-policies eval, separate from the SFT experiments. Up-to-date SFT eval
+results are in `collab_sft_v0.md` through `collab_sft_v3.md` (see §4–§7).
 
 ```bash
 # Quick sanity check — should show mean composite ~0.67:
@@ -493,6 +505,80 @@ candidates (curriculum training, 75% rebalance, row-level reward shaping).
 - Config: `configs/sft_collab_eval_qwen25_3b_v2.yaml`
 - Training data: `data/sft_collab_eval_full_v2/` (regenerate from seeds 100 + 500)
 - Held-out splits: unchanged from v1 (`spreadsheet_heldout_v1.jsonl` seed=200, `spreadsheet_heldout_stress_v1.jsonl` seed=300)
+
+---
+
+### 7. SFT v3 — curriculum learning attempt (gate: FAIL — hypothesis refuted)
+
+**v3 was run. The adapter is not promoted. v0, v1, and v2 adapters are preserved unmodified.**
+
+Two-phase curriculum: 150 iters stress-only at lr=5e-5 (phase 1), then 150 iters mixed
+at lr=2e-5 (phase 2, resumed from phase 1 final checkpoint, 40% LR to protect phase 1
+preservation gains). Total 300 iters, same compute as v2.
+
+#### Eval snapshot
+
+| Metric | Base | SFT v3 | Delta |
+|---|---|---|---|
+| composite | 0.9569 | 0.9912 | +0.0343 |
+| data_preservation | 0.9750 | 0.9750 | +0.0000 |
+| unit_consistency | 0.8625 | 1.0000 | +0.1375 |
+| RH-like cases | 2 | 2 | +0 |
+| **stress data_preservation** | 0.2000 | **0.2500** | +0.0500 |
+
+**Gate: FAIL — hypothesis refuted (4/5 PASS).** Stress `data_preservation_mean` 0.25 is
+**identical to v1 and v2**. Three SFT iterations, three different interventions (recipe
+gentleness in v1, data quantity in v2, curriculum ordering in v3), zero movement on the
+target dimension.
+
+#### Headline diagnostic
+
+Phase 1 stress-only (no competing deletion gradients) drove train loss 0.883 → 0.267 on
+stress data, with val loss tracking. Phase 2 resumed correctly from phase 1 weights (iter-1
+val loss 0.388 vs fresh-start 1.109) and refined to 0.245 train / 0.262 val. Both phases
+trained successfully. **Despite correct training, stress `data_preservation` remained at 0.25.**
+
+This rules out gradient competition (H2) as the bottleneck — phase 1 had no competing
+deletion gradients and still failed to push preservation above 0.25. It confirms signal
+asymmetry (H3): the preservation signal is "don't generate something," and SFT learns
+from positive demonstrations only. When the gold preserves rows, the model learns the
+surface form but not the policy decision; co-located positive signals (unit conversion,
+header preservation) transfer cleanly because they ARE positive demonstrations.
+
+A side note from the v3 run: mlx-lm's `adapter_path` config field is save-only and does not
+load existing weights for resume. Phase 2 needed the separate `resume_adapter_file` field
+pointing at the phase-1 final safetensors. See `FAILURE_MODES.md` Mode 12.
+
+#### What's next
+
+The flat trajectory across v0/v1/v2/v3 stress `data_preservation` (0.25 ± 0.00 across three
+SFT recipes and one curriculum experiment) is the harness's clearest experimental signal:
+**standard SFT cannot teach the row-preservation policy through positive demonstrations**.
+The gradient signal for "preserve this row" is too weak relative to the gradient signal for
+"convert $M to $K" or "drop the annotation row," and the asymmetry persists regardless of
+recipe gentleness, data quantity, or curriculum ordering.
+
+The next experimental candidate is **DPO-on-preservation pairs** — a discriminative signal
+of the form "this output preserves all rows; this other output drops some" that explicitly
+trains the policy on the preservation decision rather than asking it to imitate a positive
+demonstration. The collab-eval generator already produces stress cases (long tables, gold
+preserves all rows); building preference pairs is one new generator + a DPO training step on
+top of v3 (or directly on top of base, since the SFT-acquired schema is intact).
+
+The full v4 prompt and design is queued for a separate session — not started here.
+
+#### Reproducibility
+
+| Field | Value |
+|---|---|
+| Phase 1 config | `configs/sft_collab_eval_qwen25_3b_v3_phase1.yaml` |
+| Phase 2 config | `configs/sft_collab_eval_qwen25_3b_v3_phase2.yaml` |
+| Phase 1 adapter | `adapters/sft_collab_eval_qwen25_3b_v3_phase1/` |
+| Final adapter (v3) | `adapters/sft_collab_eval_qwen25_3b_v3/` |
+| Phase 1 data | `data/sft_collab_eval_full_v3_phase1/` (regenerate from seed=500) |
+| Phase 2 data | `data/sft_collab_eval_full_v2/` (regenerate from seeds 100 + 500) |
+| Held-out splits | unchanged from v1 (seeds 200 regular, 300 stress) |
+| Full report | [`results/collab_sft_v3.md`](results/collab_sft_v3.md) |
 
 ---
 
